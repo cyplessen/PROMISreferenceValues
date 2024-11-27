@@ -1,0 +1,515 @@
+---
+title: "Patient-Specific Reference Data for PROMIS PF, UE, & PI"
+subtitle: "2.1 Quantile Regression: Model Selection"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+knit: (function(inputFile, encoding) {
+      encoding = encoding, 
+      output_dir = "html") })
+      rmarkdown::render(inputFile, 
+output:
+  html_document:
+    code_folding: show
+    highlight: pygment
+    keep_md: no
+    theme: cerulean
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+    numbersections: TRUE
+editor_options: 
+  chunk_output_type: console
+---
+
+
+
+```{r setup, include=TRUE}
+knitr::opts_chunk$set(echo = TRUE)
+options(scipen = 999)
+library(plyr)
+library(tidyverse)
+library(haven)
+library(janitor)
+library(labelled)
+library(sjlabelled)
+library(sjPlot)
+library(summarytools)
+library(lordif)
+library(readxl)
+library(mirt)
+library(mirtCAT)
+library(mitools) # multiple imputation
+library(quantreg)
+library(mitml) # multiple imputation
+library(kableExtra)
+library(reshape)
+library(Amelia)
+library(qwraps2) # summary statistics
+library(kableExtra) # save html table
+library(nord)
+library(gghalves)
+library(plotly)
+library(viridis)
+library(svglite) # save svg
+library(flextable)
+```
+
+# About
+
+This document outlines all necessary steps for visualizing the model fit and following model selection for the publication on patient-specific reference values of PROMIS Physical Functioning items in the USA, UK, and Germany.
+
+# Load data
+
+```{r, warning=FALSE}
+models <- readRDS("data/tidy/models_age_50.rds") 
+```
+
+<br>
+
+# Model Selection
+
+## PF
+
+```{r}
+mod_comparison <- cbind(models$pf_pv$AIC$formula_0,
+                        models$pf_pv$AIC$formula_1,
+                        models$pf_pv$AIC$formula_2,
+                        models$pf_pv$AIC$formula_3,
+                        models$pf_pv$AIC$formula_4,
+                        models$pf_pv$AIC$formula_5,
+                        models$pf_pv$AIC$formula_6,
+                        models$pf_pv$AIC$formula_7)
+
+colnames(mod_comparison) <- c("id", "tau", 
+                              "Model 0: AIC", "Model 0: BIC", "delete", "delete", 
+                              "Model 1: AIC", "Model 1: BIC", "delete", "delete", 
+                              "Model 2: AIC", "Model 2: BIC", "delete", "delete", 
+                              "Model 3: AIC", "Model 3: BIC", "delete", "delete", 
+                              "Model 4: AIC", "Model 4: BIC", "delete", "delete", 
+                              "Model 5: AIC", "Model 5: BIC", "delete", "delete", 
+                              "Model 6: AIC", "Model 6: BIC", "delete", "delete", 
+                              "Model 7: AIC", "Model 7: BIC" )
+
+mod_comparison_clean <- mod_comparison %>% 
+  select(-delete) %>%
+  pivot_longer(cols = "Model 0: AIC":"Model 7: BIC",
+               names_to = "model") %>% 
+    mutate(model = as.factor(model),
+           criterion = ifelse(str_detect(model, "AIC"), "AIC", "BIC"),
+           model = str_replace(model, (":.*"), ""))
+```
+
+<br>
+
+### Plot AIC by quantile
+```{r}
+p1_pf <- mod_comparison_clean %>% 
+  filter(criterion == "AIC") %>% 
+  ggplot(aes(x = model, y = value, color = model)) +
+  geom_boxplot() +
+  geom_jitter(alpha = .3) +
+  facet_wrap(~ tau, scales = "free") +
+  theme_minimal() +
+  #theme(legend.position = "none") +
+  labs(x = "Model",
+       y = "AIC") +
+  scale_color_viridis_d(labels = c(paste("Model 0: PF ~ 1"),
+                                   paste("Model 1: PF ~ age_50"),
+                                   paste("Model 2: PF ~ age_50 + sex"),
+                                   paste("Model 3: PF ~ age_50 + country"),
+                                   paste("Model 4: PF ~ age_50 + sex + country - 1"),
+                                   paste("Model 5: PF ~ age_50 + I(age_50^2) + country + sex -1"),
+                                   paste("Model 6: PF ~ age_50 + sex + country + country:sex + country:age_50"),
+                                   paste("Model 7: PF ~ age_50 * sex * country")))   +
+  theme(legend.position = c(1, 0),
+        legend.justification = c(1, 0))
+
+p1_pf
+
+ggsave(p1_pf, filename = "figures/model_fit_PF_AIC_by_quantile.svg", width = 20, height = 15, dpi = "retina")
+```
+
+<br>
+
+
+### Plot AIC
+
+```{r}
+p2_pf <- mod_comparison_clean %>% 
+  ggplot(aes(x = as.factor(tau), y = value, color = model)) +
+  geom_boxplot() +
+  theme_minimal() + 
+  # theme(legend.position = "none") +
+  labs(x = "Quantiles",
+       y = "AIC") +
+  scale_color_viridis_d(labels = c(paste("Model 0: PF ~ 1"),
+                                   paste("Model 1: PF ~ age_50"),
+                                   paste("Model 2: PF ~ age_50 + sex"),
+                                   paste("Model 3: PF ~ age_50 + country"),
+                                   paste("Model 4: PF ~ age_50 + sex + country - 1"),
+                                   paste("Model 5: PF ~ age_50 + I(age_50^2) + country + sex -1"),
+                                   paste("Model 6: PF ~ age_50 + sex + country + country:sex + country:age_50"),
+                                   paste("Model 7: PF ~ age_50 * sex * country"))) 
+
+p2_pf
+
+ggsave(p2_pf, filename = "figures/model_fit_PF_AIC.svg", width = 20, height = 15, dpi = "retina")
+```
+
+<br>
+
+### Plot BIC by quantile
+```{r}
+p3_pf <- mod_comparison_clean %>% 
+  filter(criterion == "BIC") %>% 
+  ggplot(aes(x = model, y = value, color = model)) +
+  geom_boxplot() +
+  geom_jitter(alpha = .3) +
+  facet_wrap(~ tau, scales = "free") +
+  theme_minimal() +
+  #theme(legend.position = "none") +
+  labs(x = "Model",
+       y = "BIC") +
+  scale_color_viridis_d(labels = c(paste("Model 0: PF ~ 1"),
+                                   paste("Model 1: PF ~ age_50"),
+                                   paste("Model 2: PF ~ age_50 + sex"),
+                                   paste("Model 3: PF ~ age_50 + country"),
+                                   paste("Model 4: PF ~ age_50 + sex + country - 1"),
+                                   paste("Model 5: PF ~ age_50 + I(age_50^2) + country + sex -1"),
+                                   paste("Model 6: PF ~ age_50 + sex + country + country:sex + country:age_50"),
+                                   paste("Model 7: PF ~ age_50 * sex * country")))   +
+  theme(legend.position = c(1, 0),
+        legend.justification = c(1, 0))
+
+p3_pf
+
+ggsave(p3_pf, filename = "figures/model_fit_PF_BIC_by_quantile.svg", width = 20, height = 15, dpi = "retina")
+```
+
+<br>
+
+### Plot BIC
+
+```{r}
+p4_pf <- mod_comparison_clean %>% 
+  ggplot(aes(x = as.factor(tau), y = value, color = model)) +
+  geom_boxplot() +
+  theme_minimal() + 
+  # theme(legend.position = "none") +
+  labs(x = "Quantiles",
+       y = "BIC") +
+  scale_color_viridis_d(labels = c(paste("Model 0: PF ~ 1"),
+                                   paste("Model 1: PF ~ age_50"),
+                                   paste("Model 2: PF ~ age_50 + sex"),
+                                   paste("Model 3: PF ~ age_50 + country"),
+                                   paste("Model 4: PF ~ age_50 + sex + country - 1"),
+                                   paste("Model 5: PF ~ age_50 + I(age_50^2) + country + sex -1"),
+                                   paste("Model 6: PF ~ age_50 + sex + country + country:sex + country:age_50"),
+                                   paste("Model 7: PF ~ age_50 * sex * country")))   
+
+p4_pf
+
+ggsave(p4_pf, filename = "figures/model_fit_PF_BIC.svg", width = 20, height = 15, dpi = "retina")
+```
+
+<br>
+
+## UE
+
+```{r}
+mod_comparison_ue <- cbind(models$ue_pv$AIC$formula_0,
+                           models$ue_pv$AIC$formula_1,
+                           models$ue_pv$AIC$formula_2,
+                           models$ue_pv$AIC$formula_3,
+                           models$ue_pv$AIC$formula_4,
+                           models$ue_pv$AIC$formula_5,
+                           models$ue_pv$AIC$formula_6,
+                           models$ue_pv$AIC$formula_7)
+
+
+colnames(mod_comparison_ue) <- c("id", "tau", 
+                              "Model 0: AIC", "Model 0: BIC", "delete", "delete", 
+                              "Model 1: AIC", "Model 1: BIC", "delete", "delete", 
+                              "Model 2: AIC", "Model 2: BIC", "delete", "delete", 
+                              "Model 3: AIC", "Model 3: BIC", "delete", "delete", 
+                              "Model 4: AIC", "Model 4: BIC", "delete", "delete", 
+                              "Model 5: AIC", "Model 5: BIC", "delete", "delete", 
+                              "Model 6: AIC", "Model 6: BIC", "delete", "delete", 
+                              "Model 7: AIC", "Model 7: BIC" )
+
+mod_comparison_ue_clean <- mod_comparison_ue %>% 
+  select(-delete) %>%
+  pivot_longer(cols = "Model 0: AIC":"Model 7: BIC",
+               names_to = "model") %>% 
+    mutate(model = as.factor(model),
+           criterion = ifelse(str_detect(model, "AIC"), "AIC", "BIC"),
+           model = str_replace(model, (":.*"), ""))
+```
+
+<br>
+
+### Plot AIC by quantile
+```{r}
+p1_ue <- mod_comparison_ue_clean %>% 
+  filter(criterion == "AIC") %>% 
+  ggplot(aes(x = model, y = value, color = model)) +
+  geom_boxplot() +
+  geom_jitter(alpha = .3) +
+  facet_wrap(~ tau, scales = "free") +
+  theme_minimal() +
+  #theme(legend.position = "none") +
+  labs(x = "Model",
+       y = "AIC") +
+  scale_color_viridis_d(labels = c(paste("Model 0: UE ~ 1"),
+                                   paste("Model 1: UE ~ age_50"),
+                                   paste("Model 2: UE ~ age_50 + sex"),
+                                   paste("Model 3: UE ~ age_50 + country"),
+                                   paste("Model 4: UE ~ age_50 + sex + country - 1"),
+                                   paste("Model 5: UE ~ age_50 + I(age_50^2) + country + sex -1"),
+                                   paste("Model 6: UE ~ age_50 + sex + country + country:sex + country:age_50"),
+                                   paste("Model 7: UE ~ age_50 * sex * country")))   +
+  theme(legend.position = c(1, 0),
+        legend.justification = c(1, 0))
+p1_ue
+
+ggsave(p1_ue, filename = "figures/model_fit_ue_AIC_by_quantile.svg", width = 20, height = 15, dpi = "retina")
+```
+
+<br>
+
+
+### Plot AIC
+
+```{r}
+p2_ue <- mod_comparison_ue_clean %>% 
+  ggplot(aes(x = as.factor(tau), y = value, color = model)) +
+  geom_boxplot() +
+  theme_minimal() + 
+  # theme(legend.position = "none") +
+  labs(x = "Quantiles",
+       y = "AIC") +
+  scale_color_viridis_d(labels = c(paste("Model 0: UE ~ 1"),
+                                   paste("Model 1: UE ~ age_50"),
+                                   paste("Model 2: UE ~ age_50 + sex"),
+                                   paste("Model 3: UE ~ age_50 + country"),
+                                   paste("Model 4: UE ~ age_50 + sex + country - 1"),
+                                   paste("Model 5: UE ~ age_50 + I(age_50^2) + country + sex -1"),
+                                   paste("Model 6: UE ~ age_50 + sex + country + country:sex + country:age_50"),
+                                   paste("Model 7: UE ~ age_50 * sex * country"))) 
+
+p2_ue
+
+ggsave(p2_ue, filename = "figures/model_fit_ue_AIC.svg", width = 20, height = 15, dpi = "retina")
+```
+
+<br>
+
+### Plot BIC by quantile
+```{r}
+p3_ue <- mod_comparison_ue_clean %>% 
+  filter(criterion == "BIC") %>% 
+  ggplot(aes(x = model, y = value, color = model)) +
+  geom_boxplot() +
+  geom_jitter(alpha = .3) +
+  facet_wrap(~ tau, scales = "free") +
+  theme_minimal() +
+  #theme(legend.position = "none") +
+  labs(x = "Model",
+       y = "BIC") +
+  scale_color_viridis_d(labels = c(paste("Model 0: UE ~ 1"),
+                                   paste("Model 1: UE ~ age_50"),
+                                   paste("Model 2: UE ~ age_50 + sex"),
+                                   paste("Model 3: UE ~ age_50 + country"),
+                                   paste("Model 4: UE ~ age_50 + sex + country - 1"),
+                                   paste("Model 5: UE ~ age_50 + I(age_50^2) + country + sex -1"),
+                                   paste("Model 6: UE ~ age_50 + sex + country + country:sex + country:age_50"),
+                                   paste("Model 7: UE ~ age_50 * sex * country")))   +
+  theme(legend.position = c(1, 0),
+        legend.justification = c(1, 0))
+
+p3_ue
+
+ggsave(p3_ue, filename = "figures/model_fit_ue_BIC_by_quantile.svg", width = 20, height = 15, dpi = "retina")
+```
+
+<br>
+
+### Plot BIC
+
+```{r}
+p4_ue <- mod_comparison_ue_clean %>% 
+  ggplot(aes(x = as.factor(tau), y = value, color = model)) +
+  geom_boxplot() +
+  theme_minimal() + 
+  # theme(legend.position = "none") +
+  labs(x = "Quantiles",
+       y = "BIC") +
+  scale_color_viridis_d(labels = c(paste("Model 0: UE ~ 1"),
+                                   paste("Model 1: UE ~ age_50"),
+                                   paste("Model 2: UE ~ age_50 + sex"),
+                                   paste("Model 3: UE ~ age_50 + country"),
+                                   paste("Model 4: UE ~ age_50 + sex + country - 1"),
+                                   paste("Model 5: UE ~ age_50 + I(age_50^2) + country + sex -1"),
+                                   paste("Model 6: UE ~ age_50 + sex + country + country:sex + country:age_50"),
+                                   paste("Model 7: UE ~ age_50 * sex * country"))) 
+
+p4_ue
+
+ggsave(p4_ue, filename = "figures/model_fit_ue_BIC.svg", width = 20, height = 15, dpi = "retina")
+```
+
+<br>
+
+## PI
+
+```{r}
+mod_comparison_pi <- cbind(models$pi_pv$AIC$formula_0,
+                           models$pi_pv$AIC$formula_1,
+                           models$pi_pv$AIC$formula_2,
+                           models$pi_pv$AIC$formula_3,
+                           models$pi_pv$AIC$formula_4,
+                           models$pi_pv$AIC$formula_5,
+                           models$pi_pv$AIC$formula_6,
+                           models$pi_pv$AIC$formula_7)
+
+
+colnames(mod_comparison_pi) <- c("id", "tau", 
+                              "Model 0: AIC", "Model 0: BIC", "delete", "delete", 
+                              "Model 1: AIC", "Model 1: BIC", "delete", "delete", 
+                              "Model 2: AIC", "Model 2: BIC", "delete", "delete", 
+                              "Model 3: AIC", "Model 3: BIC", "delete", "delete", 
+                              "Model 4: AIC", "Model 4: BIC", "delete", "delete", 
+                              "Model 5: AIC", "Model 5: BIC", "delete", "delete", 
+                              "Model 6: AIC", "Model 6: BIC", "delete", "delete", 
+                              "Model 7: AIC", "Model 7: BIC" )
+
+mod_comparison_pi_clean <- mod_comparison_pi %>% 
+  select(-delete) %>%
+  pivot_longer(cols = "Model 0: AIC":"Model 7: BIC",
+               names_to = "model") %>% 
+    mutate(model = as.factor(model),
+           criterion = ifelse(str_detect(model, "AIC"), "AIC", "BIC"),
+           model = str_replace(model, (":.*"), ""))
+```
+
+<br>
+
+### Plot AIC by quantile
+```{r}
+p1_pi <- mod_comparison_pi_clean %>% 
+  filter(criterion == "AIC") %>% 
+  ggplot(aes(x = model, y = value, color = model)) +
+  geom_boxplot() +
+  geom_jitter(alpha = .3) +
+  facet_wrap(~ tau, scales = "free") +
+  theme_minimal() +
+  #theme(legend.position = "none") +
+  labs(x = "Model",
+       y = "AIC") +
+  scale_color_viridis_d(labels = c(paste("Model 0: PI ~ 1"),
+                                   paste("Model 1: PI ~ age_50"),
+                                   paste("Model 2: PI ~ age_50 + sex"),
+                                   paste("Model 3: PI ~ age_50 + country"),
+                                   paste("Model 4: PI ~ age_50 + sex + country - 1"),
+                                   paste("Model 5: PI ~ age_50 + I(age_50^2) + country + sex -1"),
+                                   paste("Model 6: PI ~ age_50 + sex + country + country:sex + country:age_50"),
+                                   paste("Model 7: PI ~ age_50 * sex * country")))   +
+  theme(legend.position = c(1, 0),
+        legend.justification = c(1, 0))
+p1_pi
+ggsave(p1_pi, filename = "figures/model_fit_pi_AIC_by_quantile.svg", width = 20, height = 15, dpi = "retina")
+```
+
+<br>
+
+
+### Plot AIC
+
+```{r}
+p2_pi <- mod_comparison_pi_clean %>% 
+  ggplot(aes(x = as.factor(tau), y = value, color = model)) +
+  geom_boxplot() +
+  theme_minimal() + 
+  # theme(legend.position = "none") +
+  labs(x = "Quantiles",
+       y = "AIC") +
+  scale_color_viridis_d(labels = c(paste("Model 0: PI ~ 1"),
+                                   paste("Model 1: PI ~ age_50"),
+                                   paste("Model 2: PI ~ age_50 + sex"),
+                                   paste("Model 3: PI ~ age_50 + country"),
+                                   paste("Model 4: PI ~ age_50 + sex + country - 1"),
+                                   paste("Model 5: PI ~ age_50 + I(age_50^2) + country + sex -1"),
+                                   paste("Model 6: PI ~ age_50 + sex + country + country:sex + country:age_50"),
+                                   paste("Model 7: PI ~ age_50 * sex * country")))
+
+p2_pi
+
+ggsave(p2_pi, filename = "figures/model_fit_pi_AIC.svg", width = 20, height = 15, dpi = "retina")
+```
+
+<br>
+
+### Plot BIC by quantile
+```{r}
+p3_pi <- mod_comparison_pi_clean %>% 
+  filter(criterion == "BIC") %>% 
+  ggplot(aes(x = model, y = value, color = model)) +
+  geom_boxplot() +
+  geom_jitter(alpha = .3) +
+  facet_wrap(~ tau, scales = "free") +
+  theme_minimal() +
+  #theme(legend.position = "none") +
+  labs(x = "Model",
+       y = "BIC") +
+  scale_color_viridis_d(labels = c(paste("Model 0: PI ~ 1"),
+                                   paste("Model 1: PI ~ age_50"),
+                                   paste("Model 2: PI ~ age_50 + sex"),
+                                   paste("Model 3: PI ~ age_50 + country"),
+                                   paste("Model 4: PI ~ age_50 + sex + country - 1"),
+                                   paste("Model 5: PI ~ age_50 + I(age_50^2) + country + sex -1"),
+                                   paste("Model 6: PI ~ age_50 + sex + country + country:sex + country:age_50"),
+                                   paste("Model 7: PI ~ age_50 * sex * country")))  +
+  theme(legend.position = c(1, 0),
+        legend.justification = c(1, 0))
+
+p3_pi
+
+ggsave(p3_pi, filename = "figures/model_fit_pi_BIC_by_quantile.svg", width = 20, height = 15, dpi = "retina")
+```
+
+<br>
+
+### Plot BIC
+
+```{r}
+p4_pi <- mod_comparison_pi_clean %>% 
+  ggplot(aes(x = as.factor(tau), y = value, color = model)) +
+  geom_boxplot() +
+  theme_minimal() + 
+  # theme(legend.position = "none") +
+  labs(x = "Quantiles",
+       y = "BIC") +
+  scale_color_viridis_d(labels = c(paste("Model 0: PI ~ 1"),
+                                   paste("Model 1: PI ~ age_50"),
+                                   paste("Model 2: PI ~ age_50 + sex"),
+                                   paste("Model 3: PI ~ age_50 + country"),
+                                   paste("Model 4: PI ~ age_50 + sex + country - 1"),
+                                   paste("Model 5: PI ~ age_50 + I(age_50^2) + country + sex -1"),
+                                   paste("Model 6: PI ~ age_50 + sex + country + country:sex + country:age_50"),
+                                   paste("Model 7: PI ~ age_50 * sex * country")))
+
+p4_pi
+
+ggsave(p4_pi, filename = "figures/model_fit_pi_BIC.svg", width = 20, height = 15, dpi = "retina")
+```
+
+
+## Summary Model Fit
+
+Based on the above findings we decide to use model 4 for all domains, as the fit does not improve substantially with adding more complexity beyond the additive model 4.
+
+<br>
+
+```{r reproducibility_stuff, include=FALSE}
+devtools::session_info() %>%
+    yaml::write_yaml("code reproducibility/sessioninfo_2.1.yaml")
+```

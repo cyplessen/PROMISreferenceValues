@@ -1,0 +1,1487 @@
+---
+title: "Patient-Specific Reference Data for PROMIS PF, UE, & PI"
+subtitle: "1. Data Cleaning"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+knit: (function(inputFile, encoding) {
+      encoding = encoding, 
+      output_dir = "html") })
+      rmarkdown::render(inputFile, 
+output:
+  html_document:
+    code_folding: show
+    highlight: pygment
+    keep_md: no
+    theme: cerulean
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+editor_options: 
+  chunk_output_type: console
+---
+
+
+```{r setup, include=TRUE}
+knitr::opts_chunk$set(echo = TRUE)
+options(scipen = 999)
+require(digest)
+library(plyr)
+library(tidyverse)
+library(haven)
+library(janitor)
+library(labelled)
+library(sjlabelled)
+library(sjPlot)
+library(summarytools)
+library(lordif)
+library(readxl)
+library(mirt)
+library(mirtCAT)
+library(mitools) # multiple imputation
+library(quantreg)
+library(mitml) # multiple imputation
+library(kableExtra)
+library(reshape)
+library(Amelia)
+library(qwraps2) # summary statistics
+library(kableExtra) # save html table
+library(nord)
+library(gghalves)
+library(plotly)
+library(ggpubr)
+library(ggExtra)
+library(grid)
+library(gridExtra)
+library(viridis)
+library(cowplot)
+library(hrbrthemes)
+```
+
+# About
+
+This document outlines all necessary steps for data cleaning, calculating theta estimates, and plausible value imputation for the publication on patient-specific reference values of PROMIS Physical Functioning items in the USA, UK, and Germany.
+
+# Data cleaning
+
+## PROMIS Parameters
+
+<br>
+
+### PF 2.0
+```{r}
+pars <- read_excel("data/not-sharable-data/CUE PROMIS v2.0 - Physical Function and Mobility 11032016.xlsx", 
+                   skip = 9) # cannot be shared and needs to be obtained from PROMIS
+
+pars <- pars[,c(1,6:10)]
+
+names(pars) <- c("ID", 
+                 "a1", 
+                 paste0("b", 0:3))
+
+# All items: UE + PF
+pf_items <- c("PFA1", 
+              "PFA3", 
+              "PFA5", 
+              "PFA11", 
+              "PFA12", 
+              "PFA51", 
+              "PFA56", 
+              "PFB24", 
+              "PFC12", 
+              "PFC36r1", 
+              "PFC37", 
+              "PFC45r1", 
+              "PFC46", 
+              "PFM26", 
+              "PFA14r1", 
+              "PFA29r1", 
+              "PFA34", 
+              "PFA36", 
+              "PFB13", 
+              "PFB26", 
+              "PFB28r1", 
+              "PFB34")
+
+promis_parameters <- pars %>% 
+  filter(`ID` %in% pf_items)
+```
+
+
+<br>
+
+#### Order items alphabetically and numerically
+```{r}
+promis_parameters <- promis_parameters[order(promis_parameters$ID),]
+```
+
+<br>
+
+#### Transform from traditional to mirt convention
+```{r}
+promis_parameters_for_mirt <- traditional2mirt(promis_parameters[,-1], 
+                                               cls = "graded", 
+                                               ncat = 5)
+```
+
+<br>
+
+```{r}
+model_from_promis_parameters <- generate.mirt_object(promis_parameters_for_mirt, 
+                                            itemtype = "graded")
+```
+
+<br>
+
+### UE 2.0
+
+```{r}
+pars_ue <- read_excel("data/not-sharable-data/CUE PROMIS v2.0 - Upper Extremity 11032016.xlsx", 
+                   skip = 9)  # cannot be shared and needs to be obtained from PROMIS
+
+pars_ue <- pars_ue[,c(1,6:10)]
+
+names(pars_ue) <- c("ID", 
+                 "a1", 
+                 paste0("b", 0:3))
+
+# custom sf for Upper Extremities
+ue_sf_ao8 <- c(
+  "PFA14r1",
+  "PFA29r1",
+  "PFA34",
+  "PFA36",
+  "PFB13",
+  "PFB26",
+  "PFB28r1",
+  "PFB34"
+)
+
+promis_ue_parameters <- pars_ue %>% 
+  filter(`ID` %in% ue_sf_ao8)
+```
+
+<br>
+
+#### Order items alphabetically and numerically
+```{r}
+promis_ue_parameters <- promis_ue_parameters[order(promis_ue_parameters$ID),]
+```
+
+<br>
+
+#### Transform from traditional to mirt convention
+```{r}
+promis_ue_parameters_for_mirt <- traditional2mirt(promis_ue_parameters[,-1], 
+                                               cls = "graded", 
+                                               ncat = 5)
+
+model_from_promis_ue_parameters <- generate.mirt_object(promis_ue_parameters_for_mirt, 
+                                            itemtype = "graded")
+```
+
+<br>
+
+### Pain Interference 1.1
+
+```{r}
+pars_pi <- read_excel("data/not-sharable-data/CUE PROMIS v1.1 - Pain Interference 2020-05-26.xls", 
+                      skip = 8)  # cannot be shared and needs to be obtained from PROMIS
+
+pars_pi <- pars_pi[,c(1,7:11)]
+
+names(pars_pi) <- c("ID", 
+                 "a1", 
+                 paste0("b", 0:3))
+
+# custom sf for Upper Extremities
+pi_sf_ao8 <- c(
+  "PAININ3",
+  "PAININ9",
+  "PAININ12",
+  "PAININ13",
+  "PAININ22",
+  "PAININ31",
+  "PAININ34",
+  "PAININ36")
+
+promis_pi_parameters <- pars_pi %>% 
+  filter(`ID` %in% pi_sf_ao8)
+```
+
+<br>
+
+#### Order items alphabetically and numerically
+```{r}
+promis_pi_parameters <- promis_pi_parameters[order(promis_pi_parameters$ID),]
+```
+
+<br>
+
+#### Transform from traditional to mirt convention
+```{r}
+promis_pi_parameters_for_mirt <- traditional2mirt(promis_pi_parameters[,-1], 
+                                               cls = "graded", 
+                                               ncat = 5)
+
+model_from_promis_pi_parameters <- generate.mirt_object(promis_pi_parameters_for_mirt, 
+                                            itemtype = "graded")
+
+summary(model_from_promis_pi_parameters)
+```
+
+<br>
+
+## Germany
+
+### Loading & Cleaning
+```{r}
+dfGer <- read_sav("data/raw/Charite_Patientenbefragung.sav") %>% 
+  janitor::clean_names(case = "screaming_snake") %>% 
+  mutate(country = "ger") %>% 
+  dplyr::select(sex = Q100,
+                age = Q101,
+                education = S1,
+                education_de = S1_DE,
+                work = S2,
+                work_h = S3,
+                household = S4A,
+                household_child = S4B, 
+                citizienship = S5,
+                relationship = S6,
+                everything()) %>% 
+  mutate(
+    sex = sex - 1, # 0=male, 1=female, 2 = opposite sex, 3 = assignment to no gender
+    agegroup = case_when(age >= 50  & age <= 59 ~ '50-59',
+                              age >= 60  & age <= 64 ~ '60-64',
+                              age >= 65  & age <= 69 ~ '65-69',
+                              age >= 70  & age <= 74 ~ '70-74',
+                              age >= 75  & age <= 79 ~ '75-79',
+                              age >= 80              ~ '80+'),
+        agegroup_numeric = case_when(age >= 50  & age <= 59 ~ 1,
+                         age >= 60  & age <= 64 ~ 2,
+                         age >= 65  & age <= 69 ~ 3,
+                         age >= 70  & age <= 74 ~ 4,
+                         age >= 75  & age <= 79 ~ 5,
+                         age >= 80              ~ 6))  %>% 
+  relocate(agegroup, .after = age) %>% 
+  glimpse()
+```
+
+<br>
+
+#### Recode missing values
+```{r}
+dfGer$age %>% 
+  max()
+
+dfGer[dfGer == 99] <- NA  # can be hardcoded without problem
+```
+
+<br>
+
+#### Inspect weights
+
+##### Male
+```{r}
+dfGer %>% 
+  filter(sex == 0) %>% 
+  group_by(agegroup) %>% 
+  dplyr::summarise(weight = GEWICHT,
+                   k = n()) %>% 
+    slice(1)
+```
+
+##### Female
+```{r}
+dfGer %>% 
+  filter(sex == 1) %>% 
+  group_by(agegroup) %>% 
+  dplyr::summarise(weight = GEWICHT,
+                   k = n()) %>% 
+    slice(1)
+```
+
+<br>
+
+### Items and answers
+```{r}
+sjPlot::view_df(dfGer)
+```
+
+<br>
+
+### Values
+
+```{r}
+print(dfSummary(dfGer, graph.magnif = 0.75), 
+      method = 'render', 
+      max.tbl.height = 600,
+      varnumbers = F,
+      na.col = F
+      )
+```
+
+<br>
+
+### Education: Harmonization
+
+```{r}
+dfGer <- dfGer %>% 
+  mutate(education = ifelse(education_de == 8, 1, ifelse(education_de == 9, 5, education_de))) 
+```
+
+<br>
+
+## UK
+
+### Loading & Cleaning
+
+```{r}
+dfUk  <- read_sav("data/raw/Charite_Patientenbefragung_UK_EN.sav")  %>% 
+  janitor::clean_names(case = "screaming_snake") %>% 
+  mutate(country = "uk") %>% 
+  dplyr::select(sex = Q100,
+                age = Q101,
+                education = S1,
+                work = S2,
+                work_h = S3,
+                household = S4A,
+                household_child = S4B, 
+                citizenship = S5_U,
+                relationship = S6,
+                everything()) %>% 
+  mutate(
+    sex = sex - 1, # 0=male, 1=female, 2 = opposite sex, 3 = assignment to no gender
+    agegroup = case_when(age >= 50  & age <= 59 ~ '50-59',
+                         age >= 60  & age <= 64 ~ '60-64',
+                         age >= 65  & age <= 69 ~ '65-69',
+                         age >= 70  & age <= 74 ~ '70-74',
+                         age >= 75  & age <= 79 ~ '75-79',
+                         age >= 80              ~ '80+'),
+        agegroup_numeric = case_when(age >= 50  & age <= 59 ~ 1,
+                         age >= 60  & age <= 64 ~ 2,
+                         age >= 65  & age <= 69 ~ 3,
+                         age >= 70  & age <= 74 ~ 4,
+                         age >= 75  & age <= 79 ~ 5,
+                         age >= 80              ~ 6))  %>%
+  relocate(agegroup, .after = age) %>% 
+  glimpse()
+```
+
+<br>
+
+#### Recode missing values
+```{r}
+dfUk[dfUk == 99] <- NA
+```
+
+<br>
+
+#### Inspect weights
+
+##### Male
+```{r}
+dfUk %>% 
+  filter(sex == 0) %>% 
+  group_by(agegroup) %>% 
+  dplyr::summarise(weight = GEWICHT,
+                   k = n()) %>% 
+    slice(1)
+```
+
+UK, males:
+- 50-59: weight = 2.13596272116676
+- 60-69: weight = 0.830934529197291
+- 70-79: weight = 0.637937591074581
+- 80+: weight = 0.660048796451983
+
+
+
+
+##### Female
+```{r}
+dfUk %>% 
+  filter(sex == 1) %>% 
+  group_by(agegroup) %>% 
+  dplyr::summarise(weight = GEWICHT,
+                   k = n()) %>% 
+    slice(1)
+```
+
+UK, ƒemales:
+- 50-59: weight = 2.12126082031248
+- 60-69: weight = 0.86893721620469
+- 70-79: weight = 0.708808366213478
+- 80+: weight = 0.946453157957213
+
+```{r}
+dfUk %>% 
+  filter(sex == 1 & agegroup == "70-74") %>% 
+  pull(GEWICHT)  %>% 
+  table()
+```
+
+<br>
+
+### Items and answers
+```{r}
+sjPlot::view_df(dfUk)
+```
+
+<br>
+
+### Values
+```{r}
+print(dfSummary(dfUk, graph.magnif = 0.75), 
+      method = 'render', 
+      max.tbl.height = 600,
+      varnumbers = F,
+      na.col = F
+      )
+```
+
+<br>
+
+## USA
+
+### Loading & Cleaning
+
+```{r}
+dfUSA  <- read_sav("data/raw/Charite_Patientenbefragung_USA_EN.sav") %>% 
+  janitor::clean_names(case = "screaming_snake") %>% 
+  mutate(country = "usa")  %>% 
+  dplyr::select(sex = Q100,
+                age = Q101,
+                education = S1,
+                work = S2,
+                work_h = S3,
+                household = S4A,
+                household_child = S4B, 
+                citizienship = S5_U,
+                relationship = S6,
+                everything()) %>% 
+  filter(!sex > 2) %>%  # remove 3 persons with sex =! 1 or 2
+  mutate(
+    sex = sex - 1, # 0=male, 1=female, 2 = opposite sex, 3 = assignment to no gender
+    agegroup = case_when(age >= 50  & age <= 59 ~ '50-59',
+                         age >= 60  & age <= 64 ~ '60-64',
+                         age >= 65  & age <= 69 ~ '65-69',
+                         age >= 70  & age <= 74 ~ '70-74',
+                         age >= 75  & age <= 79 ~ '75-79',
+                         age >= 80              ~ '80+'),
+    agegroup_numeric = case_when(age >= 50  & age <= 59 ~ 1,
+                                 age >= 60  & age <= 64 ~ 2,
+                                 age >= 65  & age <= 69 ~ 3,
+                                 age >= 70  & age <= 74 ~ 4,
+                                 age >= 75  & age <= 79 ~ 5,
+                                 age >= 80              ~ 6))  %>% 
+  relocate(agegroup, .after = age) %>% 
+  glimpse()
+```
+
+<br>
+
+#### Recode missing values
+```{r}
+dfUSA[dfUSA == 99] <- NA
+```
+
+<br>
+
+#### Inspect weights
+
+##### Male
+```{r}
+dfUSA %>% 
+  filter(sex == 0) %>% 
+  group_by(agegroup) %>% 
+  dplyr::summarise(weight = GEWICHT,
+                   k = n()) %>% 
+    slice(1)
+```
+
+USA, males:
+- 50-59: weight = 2.12635321233081
+- 60-69: weight = 0.919968424212332 
+- 70-79: weight = 0.558584881809583 
+- 80+: weight = 0.518656990820903
+
+```{r}
+dfUSA %>% 
+  filter(sex == 0 & agegroup == "70-74") %>% 
+  pull(GEWICHT)  %>% 
+  table()
+```
+
+
+##### Female
+```{r}
+dfUSA %>% 
+  filter(sex == 1) %>% 
+  group_by(agegroup) %>% 
+  dplyr::summarise(weight = GEWICHT,
+                   k = n()) %>% 
+    slice(1)
+```
+
+USA, ƒemales:
+- 50-59: weight = 2.24827534190936
+- 60-69: weight = 1.02422480157129
+- 70-79: weight = 0.655351841229223
+- 80+: weight = 0.806875090071116
+
+
+<br>
+
+### Items and answers
+```{r}
+sjPlot::view_df(dfUSA)
+```
+
+<br>
+
+### Overview: Values
+```{r}
+print(dfSummary(dfUSA, graph.magnif = 0.75), 
+      method = 'render', 
+      max.tbl.height = 600,
+      varnumbers = F,
+      na.col = F
+      )
+```
+
+<br>
+
+## Complete Dataset 
+
+### Cleaning
+```{r}
+dfGer <- remove_all_labels(dfGer)
+dfUSA <- remove_all_labels(dfUSA)
+dfUk <- remove_all_labels(dfUk)
+
+dataComplete <- bind_rows(dfGer, dfUSA, dfUk) %>% 
+  dplyr::select(country,
+                everything())
+  
+  
+colnames(dataComplete) = gsub('R1', 'r1', colnames(dataComplete))
+
+dataComplete <- dataComplete %>% 
+  rowwise() %>% 
+  mutate(percent_female = sex -1) %>% 
+  mutate(
+    global_health_sum_score = sum(
+      GLOBAL03, # phys health
+      GLOBAL04, # mental health
+      GLOBAL05, # social activities
+      GLOBAL06, # physical activity
+      na.rm = T),
+    
+    pf_sum_score = sum(
+      PFA1  ,
+      PFA3 ,
+      PFA5 ,
+      PFA11 ,
+      PFA12 ,
+      PFA51 ,
+      PFA56 ,
+      PFB24 ,
+      PFC12 ,
+      PFC36r1 ,
+      PFC37 ,
+      PFC45r1 ,
+      PFC46 ,
+      PFM26, 
+      PFA14r1,
+      PFA29r1,
+      PFA34,
+      PFA36,
+      PFB13,
+      PFB26,
+      PFB28r1,
+      PFB34,
+      na.rm = F), # exclude rows that have missing items from sum score calculation
+    
+    ue_sum_score = sum(
+      PFA14r1,
+      PFA29r1,
+      PFA34,
+      PFA36,
+      PFB13,
+      PFB26,
+      PFB28r1,
+      PFB34,
+      na.rm = F),# exclude rows that have missing items from sum score calculation
+    
+    pi_sum_score = sum(
+      PAININ3,
+      PAININ9,
+      PAININ12,
+      PAININ13,
+      PAININ22,
+      PAININ31,
+      PAININ34,
+      PAININ36, na.rm = F)# exclude rows that have missing items from sum score calculation
+  ) %>% 
+  ungroup() %>% 
+  dplyr::select(matches("sum"), country, everything() 
+  ) %>% 
+  mutate(age_centered = age - mean(age, na.rm = T),
+         age_anti_promis = (age - 50) /10, 
+         age_50 = age - 50)
+```
+
+## Inspecting sum scores
+
+```{r}
+dataComplete %>%
+  pull(pf_sum_score) %>% table(useNA = "always")
+```
+
+
+```{r}
+dataComplete %>% 
+  group_by(country) %>% 
+  dplyr::summarise(min_pf_sum_score = min(pf_sum_score, na.rm = T)
+                   )
+```
+
+
+
+## Missing Items
+
+### PF
+```{r}
+dataComplete %>% 
+  select(all_of(pf_items))  %>% 
+  map(., ~sum(is.na(.)))
+```
+
+<br>
+
+### UE
+
+```{r}
+dataComplete %>% 
+  select(all_of(ue_sf_ao8))  %>% 
+  map(., ~sum(is.na(.)))
+```
+<br>
+
+### PI
+```{r}
+dataComplete %>% 
+  select(PAININ3,
+      PAININ9,
+      PAININ12,
+      PAININ13,
+      PAININ22,
+      PAININ31,
+      PAININ34,
+      PAININ36)  %>% 
+  map(., ~sum(is.na(.)))
+```
+
+<br>
+
+### Overview
+
+```{r}
+glimpse(dataComplete)
+
+dataComplete <- dataComplete %>% 
+  mutate(country_table = dplyr::recode(country, "ger" = "Germany", "uk" = "UK", "usa" = "USA" ))
+```
+
+<br>
+
+# Latent trait estimation
+
+## Custom SF PF 
+
+```{r}
+items_complete <- dataComplete %>% 
+  dplyr::select(starts_with("PF"), -matches("SUM")) %>% 
+  rename_all(
+      funs(
+        stringr::str_to_upper(.) %>%
+        stringr::str_replace_all(., 'R1', 'r1')
+      )
+  ) %>% 
+  select(all_of(promis_parameters$ID)) # brings items in correct order
+```
+
+<br>
+
+### Calculate thetas and SEs
+
+```{r}
+fullscores_with_se <- fscores(model_from_promis_parameters, 
+                              response.pattern = items_complete,
+                              full.scores.SE = T, 
+                              append_response.pattern=FALSE
+)
+
+glimpse(fullscores_with_se)
+```
+
+<br>
+
+### Attach thetas to df
+```{r}
+dataComplete_pf22 <- dataComplete %>% 
+  mutate(pf_theta = fullscores_with_se[,1],
+         pf_se = fullscores_with_se[,2],
+         pf_tscore = pf_theta * 10 + 50,
+         pf_tscore_se = pf_se * 10) %>% 
+  select(pf_theta, pf_se, pf_tscore, pf_tscore_se, everything())
+```
+
+<br>
+
+### Mean theta
+```{r}
+dataComplete_pf22 %>% 
+  group_by(country) %>% 
+  summarise(mean_t_pf = mean(pf_tscore),
+            mean_sum_pf = mean(pf_sum_score),
+            min_t_pf = min(pf_tscore),
+            max_t_pf = max(pf_tscore),
+            min_t_score = min(pf_sum_score))
+```
+
+
+```{r}
+mapping <- c("ger" = 0, 
+             "uk" = 1, 
+             "usa" = 2)
+
+dataComplete_pf22$country_new <- mapping[dataComplete_pf22$country]
+```
+
+<br>
+
+## Custom SF UE8
+
+```{r}
+items_ue_sf_ao8 <- dataComplete_pf22 %>% 
+  dplyr::select(ue_sf_ao8) %>% 
+  rename_all(
+    funs(
+      stringr::str_to_upper(.) %>%
+        stringr::str_replace_all(., 'R1', 'r1')
+    )
+  ) %>% 
+  select(all_of(promis_ue_parameters$ID))
+```
+
+### Calculate thetas and SEs
+```{r}
+fullscores_ue_with_se <- fscores(model_from_promis_ue_parameters, 
+                              response.pattern = items_ue_sf_ao8,
+                              full.scores.SE = T, 
+                              append_response.pattern=FALSE
+)
+head(fullscores_ue_with_se)
+```
+
+<br>
+
+### Attach thetas and SEs
+```{r}
+dataComplete_ue8 <- dataComplete_pf22 %>% 
+  mutate(ue_theta = fullscores_ue_with_se[,1],
+         ue_se = fullscores_ue_with_se[,2],
+         ue_tscore = ue_theta * 10 + 50,
+         ue_tscore_se = ue_se * 10) %>% 
+  select(pf_theta, ue_theta, pf_se, ue_se, pf_tscore, ue_tscore, pf_tscore_se, ue_tscore_se, everything())
+```
+
+<br>
+
+### Mean theta
+
+```{r}
+dataComplete_ue8 %>% 
+  group_by(country) %>% 
+  summarise(mean_t_pf = mean(pf_tscore),
+            mean_t_ue = mean(ue_tscore),
+            mean_sum_pf = mean(pf_sum_score),
+            mean_sum_ue = mean(ue_sum_score))
+```
+<br>
+
+## Custom SF PI8 
+
+### Bring in correct order
+```{r}
+items_pi_sf_ao8 <- dataComplete_ue8 %>% 
+  dplyr::select(all_of(promis_pi_parameters$ID)) %>%  # brings items in correct order
+  rename_all(
+    funs(
+      stringr::str_to_upper(.) %>%
+        stringr::str_replace_all(., 'R1', 'r1')
+    )
+  )
+```
+
+<br>
+
+### Calculate thetas and SEs
+
+### all missings
+```{r}
+which(apply(is.na(items_pi_sf_ao8), 1, all))
+```
+
+```{r}
+items_pi_sf_ao8 <- items_pi_sf_ao8 %>% 
+  slice(1:1187, 1189:nrow(.))
+```
+
+
+```{r}
+fullscores_pi_with_se <- fscores(model_from_promis_pi_parameters, 
+        response.pattern = items_pi_sf_ao8,
+        full.scores.SE = T, 
+        append_response.pattern=FALSE
+)
+```
+
+
+
+```{r}
+fullscores_pi_with_se <- data.frame(fullscores_pi_with_se)
+
+fullscores_pi_start <- fullscores_pi_with_se %>% 
+    slice(1:1187) 
+
+fullscores_pi_start <- rbind(fullscores_pi_start, c(NA, NA))
+
+fullscores_pi_end <- fullscores_pi_with_se %>% 
+    slice(1188:nrow(.)) 
+
+fullscores_pi_with_se <- rbind(fullscores_pi_start, fullscores_pi_end)
+```
+
+<br>
+
+### Attach thetas and SEs
+```{r}
+dataComplete <- dataComplete_ue8 %>% 
+  mutate(pi_theta = fullscores_pi_with_se[,1],
+         pi_se = fullscores_pi_with_se[,2],
+         pi_tscore = pi_theta * 10 + 50,
+         pi_tscore_se = pi_se * 10) %>% 
+  select(pf_theta, pi_theta, pf_se, pi_se, pf_tscore, pi_tscore, pf_tscore_se, pi_tscore_se, everything())
+
+dataComplete
+```
+
+<br>
+
+### Mean theta
+
+```{r}
+dataComplete %>% 
+  group_by(country) %>% 
+  summarise(mean_t_pf = mean(pf_tscore),
+            mean_t_ue = mean(ue_tscore),
+            mean_t_pi = mean(pi_tscore, na.rm = T),
+            mean_sum_pf = mean(pf_sum_score),
+            mean_sum_pi  = mean(pi_sum_score), na.rm = T)
+```
+
+<br>
+
+# Descriptives
+
+```{r}
+summarizeVariable <- function(data, grouping.variable.a,grouping.variable.b, summarizing.variable) {
+  data %>% 
+    dplyr::group_by({{grouping.variable.a}}, {{grouping.variable.b}}) %>% 
+    dplyr::summarize(mean = mean({{summarizing.variable}}, na.rm = TRUE),
+                     sd = sd({{summarizing.variable}}, na.rm = TRUE),
+                     median = quantile({{summarizing.variable}}, 0.5, na.rm = TRUE),
+                     min = min({{summarizing.variable}}, na.rm = TRUE),
+                     max = max({{summarizing.variable}}, na.rm = TRUE),
+                     q1 = quantile({{summarizing.variable}}, 0.25, na.rm = TRUE),
+                     q3 = quantile({{summarizing.variable}}, 0.75, na.rm = TRUE)) %>% 
+    arrange({{grouping.variable.b}})
+}
+```
+
+
+```{r}
+summarizeVariable(data = dataComplete,
+                  grouping.variable.a = country,
+                  grouping.variable.b = agegroup,
+                  summarizing.variable = age)
+```
+
+
+```{r}
+dataComplete %>% 
+  ggplot(aes(x = age, fill = country)) +
+  geom_histogram(position = "dodge") + 
+  facet_grid(rows = vars(agegroup), scales = "free") + 
+  scale_fill_viridis(discrete = TRUE)
+```
+
+
+```{r}
+dataComplete %>% skimr::skim()
+```
+
+
+## Calculate Global Health Scores
+
+From [LINK](https://www.healthmeasures.net/images/PROMIS/manuals/Scoring_Manuals_/PROMIS_Global_Health_Scoring_Manual.pdf)
+- PROMIS Scale v1.2 Global Health – Physical Health 2a: sum the values of the responses to item Global03 and Global06.
+- PROMIS Scale v1.2 Global Health – Mental Health 2a: sum the values of the responses to item Global04 and Global05. 
+
+### Only calculate for non missing pairs
+```{r}
+dataComplete %>% 
+    select(contains("GLOBAL")) %>%  # replace to your needs
+  summarise_all(funs(sum(is.na(.))))
+```
+
+```{r}
+dataComplete %>% 
+  filter(is.na(GLOBAL05)) %>% 
+  pull(country) %>% 
+  table(.)
+```
+
+
+```{r}
+dataComplete %>%
+  dplyr::mutate(
+    global_health_physical_2a_sum_score = ifelse(!is.na(GLOBAL03) & !is.na(GLOBAL06),  GLOBAL03 + GLOBAL06, NA)) %>% 
+      select(contains("GLOBAL")) %>%  # replace to your needs
+  filter(is.na(GLOBAL03) | is.na(GLOBAL06))
+```
+
+```{r}
+dataComplete %>%
+  dplyr::mutate(
+    global_health_mental_2a_sum_score =  ifelse(!is.na(GLOBAL04) & !is.na(GLOBAL05),  GLOBAL04 + GLOBAL05, NA)) %>%  # only calculate if both are present
+      select(contains("GLOBAL")) %>%  # replace to your needs
+  filter(is.na(GLOBAL04) | is.na(GLOBAL05))
+```
+
+```{r}
+dataComplete <- dataComplete %>%
+  dplyr::mutate(
+    global_health_physical_2a_sum_score = ifelse(!is.na(GLOBAL03) & !is.na(GLOBAL06),  GLOBAL03 + GLOBAL06, NA),
+    global_health_physical_2a_t_score = case_when(
+      global_health_physical_2a_sum_score == 2 ~ 23.4,
+      global_health_physical_2a_sum_score == 3 ~ 29,
+      global_health_physical_2a_sum_score == 4 ~ 33.4,
+      global_health_physical_2a_sum_score == 5 ~ 37.3,
+      global_health_physical_2a_sum_score == 6 ~ 41.4,
+      global_health_physical_2a_sum_score == 7 ~ 45,
+      global_health_physical_2a_sum_score == 8 ~ 50,
+      global_health_physical_2a_sum_score == 9 ~ 56,
+      global_health_physical_2a_sum_score == 10 ~ 63.3
+    ),
+    global_health_mental_2a_sum_score =  ifelse(!is.na(GLOBAL04) & !is.na(GLOBAL05),  GLOBAL04 + GLOBAL05, NA), # only calculate if both are present
+    
+    global_health_mental_2a_t_score = case_when(
+      global_health_mental_2a_sum_score == 2 ~ 25.8,
+      global_health_mental_2a_sum_score == 3 ~ 32,
+      global_health_mental_2a_sum_score == 4 ~ 36.5,
+      global_health_mental_2a_sum_score == 5 ~ 40.6,
+      global_health_mental_2a_sum_score == 6 ~ 44.4,
+      global_health_mental_2a_sum_score == 7 ~ 48.6,
+      global_health_mental_2a_sum_score == 8 ~ 52.8,
+      global_health_mental_2a_sum_score == 9 ~ 57.7,
+      global_health_mental_2a_sum_score == 10 ~ 64.6
+    ))
+```
+
+
+## Overview
+
+
+
+
+```{r  results = "asis", eval = FALSE}
+options(qwraps2_markup = 'markdown')
+
+summaryStructureT <-
+  list("Age" =
+         list("min"       = ~ min(age, na.rm = TRUE),
+              "max"       = ~ max(age, na.rm = TRUE),
+              "mean (sd)" = ~ qwraps2::mean_sd(age, 
+                                               na_rm = TRUE, 
+                                               show_n = "never"),
+              "median" = ~  median(age, na.rm = TRUE)),
+       
+       "Sex, female %" =
+         list(#"min"       = ~ min(sex, na.rm = TRUE),
+              #"max"       = ~ max(sex, na.rm = TRUE),
+              "mean (sd)" = ~ qwraps2::mean_sd(percent_female, 
+                                               na_rm = T, 
+                                               show_n = "never")),
+       
+       "Work status" =
+         list("Full-time employment" = ~ qwraps2::n_perc0(work == 1, na_rm = TRUE),
+              "Part-time"  = ~ qwraps2::n_perc0(work == 2, na_rm = TRUE),
+              "Self-employed"  = ~ qwraps2::n_perc0(work == 3, na_rm = TRUE),
+              "Student" = ~ qwraps2::n_perc0(work == 4, na_rm = TRUE),
+              "Retired, in early retirement"  = ~ qwraps2::n_perc0(work == 5, na_rm = TRUE),
+              "Job seeker / not employed"  = ~ qwraps2::n_perc0(work == 6, na_rm = TRUE),
+              "Other"  = ~ qwraps2::n_perc0(work == 7, na_rm = TRUE)),
+       
+       "Education" =
+         list("Less than high school degree" = ~ qwraps2::n_perc0(education == 1,  na_rm = TRUE),
+              "High school graduate"  = ~ qwraps2::n_perc0(education == 2,  na_rm = TRUE),
+              "Some college"  = ~ qwraps2::n_perc0(education == 3,  na_rm = TRUE),
+              "Bachelors" = ~ qwraps2::n_perc0(education == 4,  na_rm = TRUE),
+              "Masters"  = ~ qwraps2::n_perc0(education == 5,  na_rm = TRUE),
+              "Doctorate"  = ~ qwraps2::n_perc0(education== 6,  na_rm = TRUE),
+              "Unknown"  = ~ qwraps2::n_perc0(education == 7,  na_rm = TRUE)),
+              #"Invalid"  = ~ qwraps2::n_perc0(education == -2,  na_rm = TRUE)),
+       
+       "Marital status " =
+         list("Married/Living with partner" = ~ qwraps2::n_perc0(relationship == 1, na_rm = TRUE),
+              "Divorced"  = ~ qwraps2::n_perc0(relationship == 3, na_rm = TRUE),
+              "Widowed"  = ~ qwraps2::n_perc0(relationship == 4, na_rm = TRUE),
+              "Single"  = ~ qwraps2::n_perc0(relationship== 2, na_rm = TRUE),
+              "Unknown"  = ~ qwraps2::n_perc0(relationship == 5, na_rm = TRUE)),
+            
+       "Global Health Sum Score" =
+         list("min"       = ~ min(global_health_sum_score, na.rm = TRUE),
+              "max"       = ~ max(global_health_sum_score, na.rm = TRUE),
+              "IQR"       = ~ IQR(global_health_sum_score, na.rm = TRUE),
+              "mean (sd)"  = ~ qwraps2::mean_sd(global_health_sum_score, 
+                                               na_rm = TRUE, 
+                                               show_n = "never"),
+              "median" = ~  median(global_health_sum_score, na.rm = TRUE)
+              ),
+       
+       "PROMIS Physical Function Sum Score" =
+         list("min"       = ~ min(pf_sum_score, na.rm = TRUE),
+              "max"       = ~ max(pf_sum_score, na.rm = TRUE),
+              "IQR"       = ~ IQR(pf_sum_score, na.rm = TRUE),
+              "mean (sd)"  = ~ qwraps2::mean_sd(pf_sum_score, 
+                                               na_rm = TRUE, 
+                                               show_n = "never"),
+              "median" = ~  median(pf_sum_score, na.rm = TRUE)
+                    ),
+       
+              "PROMIS Physical Function T-Score" =
+         list("min"       = ~ round(min(pf_tscore, na.rm = TRUE),2),
+              "max"       = ~ round(max(pf_tscore, na.rm = TRUE),2),
+              "IQR"       = ~ round(IQR(pf_tscore, na.rm = TRUE),2),
+              "mean (sd)"  = ~ qwraps2::mean_sd(pf_tscore, 
+                                               na_rm = TRUE, 
+                                               show_n = "never"),
+              "median" = ~  round(median(pf_tscore, na.rm = TRUE),2)
+                    ),
+        "PROMIS Upper Extremities Sum Score" =
+         list("min"       = ~ min(ue_sum_score, na.rm = TRUE),
+              "max"       = ~ max(ue_sum_score, na.rm = TRUE),
+              "IQR"       = ~ IQR(ue_sum_score, na.rm = TRUE),
+              "mean (sd)"  = ~ qwraps2::mean_sd(ue_sum_score, 
+                                               na_rm = TRUE, 
+                                               show_n = "never"),
+              "median" = ~  median(ue_sum_score, na.rm = TRUE)
+              ),
+               "PROMIS Upper Extremities T-Score" =
+         list("min"       = ~ round(min(ue_tscore, na.rm = TRUE),2),
+              "max"       = ~ round(max(ue_tscore, na.rm = TRUE),2),
+              "IQR"       = ~ round(IQR(ue_tscore, na.rm = TRUE),2),
+              "mean (sd)"  = ~ qwraps2::mean_sd(ue_tscore, 
+                                               na_rm = TRUE, 
+                                               show_n = "never"),
+              "median" = ~  round(median(ue_tscore, na.rm = TRUE),2)
+              ),
+               "PROMIS Pain Interference Sum Score" =
+         list("min"       = ~ min(pi_sum_score, na.rm = TRUE),
+              "max"       = ~ max(pi_sum_score, na.rm = TRUE),
+              "IQR"       = ~ IQR(pi_sum_score, na.rm = TRUE),
+              "mean (sd)"  = ~ qwraps2::mean_sd(pi_sum_score, 
+                                               na_rm = TRUE, 
+                                               show_n = "never"),
+              "median" = ~  median(pi_sum_score, na.rm = TRUE)
+              ),
+                      "PROMIS Pain Interference T-Score" =
+         list("min"       = ~ round(min(pi_tscore, na.rm = TRUE),2),
+              "max"       = ~ round(max(pi_tscore, na.rm = TRUE),2),
+              "IQR"       = ~ round(IQR(pi_tscore, na.rm = TRUE),2),
+              "mean (sd)"  = ~ qwraps2::mean_sd(pi_tscore, 
+                                               na_rm = TRUE, 
+                                               show_n = "never"),
+              "median" = ~  round(median(pi_tscore, na.rm = TRUE),2)
+              )
+  )
+
+
+dataComplete <- dataComplete %>% 
+  mutate(country_table = dplyr::recode(country, "ger" = "Germany", "uk" = "UK", "usa" = "USA" ))
+
+summaryTable <- summary_table(dplyr::group_by(dataComplete, country_table), summaryStructureT)
+
+
+print(summaryTable, rtitle = "Summary Statistics")
+```
+
+## Table 1: Sociodemographics
+
+
+
+```{r  results = "asis"}
+options(qwraps2_markup = 'markdown')
+
+summaryStructureSociodemographics <-
+  list("Age" =
+         list("min"       = ~ min(age, na.rm = TRUE),
+              "max"       = ~ max(age, na.rm = TRUE),
+              "mean (sd)" = ~ qwraps2::mean_sd(age, 
+                                               na_rm = TRUE, 
+                                               show_n = "never"),
+              "median" = ~  median(age, na.rm = TRUE)),
+       
+       "Sex, female" =
+         list(#"min"       = ~ min(sex, na.rm = TRUE),
+           #"max"       = ~ max(sex, na.rm = TRUE),
+           "N (%)"  = ~ qwraps2::n_perc0(sex == 1, na_rm = TRUE)),
+       
+       "Work status" =
+         list("Full-time employment" = ~ qwraps2::n_perc0(work == 1, na_rm = TRUE),
+              "Part-time"  = ~ qwraps2::n_perc0(work == 2, na_rm = TRUE),
+              "Self-employed"  = ~ qwraps2::n_perc0(work == 3, na_rm = TRUE),
+              "Student" = ~ qwraps2::n_perc0(work == 4, na_rm = TRUE),
+              "Retired, in early retirement"  = ~ qwraps2::n_perc0(work == 5, na_rm = TRUE),
+              "Job seeker / not employed"  = ~ qwraps2::n_perc0(work == 6, na_rm = TRUE),
+              "Other"  = ~ qwraps2::n_perc0(work == 7, na_rm = TRUE)),
+       
+       "Education" =
+         list("Less than high school degree" = ~ qwraps2::n_perc0(education == 1,  na_rm = TRUE),
+              "High school graduate"  = ~ qwraps2::n_perc0(education == 2,  na_rm = TRUE),
+              "Some college"  = ~ qwraps2::n_perc0(education == 3,  na_rm = TRUE),
+              "Bachelors" = ~ qwraps2::n_perc0(education == 4,  na_rm = TRUE),
+              "Masters"  = ~ qwraps2::n_perc0(education == 5,  na_rm = TRUE),
+              "Doctorate"  = ~ qwraps2::n_perc0(education== 6,  na_rm = TRUE),
+              "Unknown"  = ~ qwraps2::n_perc0(education == 7,  na_rm = TRUE)),
+       #"Invalid"  = ~ qwraps2::n_perc0(education == -2,  na_rm = TRUE)),
+       
+       "Marital status " =
+         list("Married/Living with partner" = ~ qwraps2::n_perc0(relationship == 1, na_rm = TRUE),
+              "Divorced"  = ~ qwraps2::n_perc0(relationship == 3, na_rm = TRUE),
+              "Widowed"  = ~ qwraps2::n_perc0(relationship == 4, na_rm = TRUE),
+              "Single"  = ~ qwraps2::n_perc0(relationship== 2, na_rm = TRUE),
+              "Unknown"  = ~ qwraps2::n_perc0(relationship == 5, na_rm = TRUE)),
+              
+       "PROMIS Global Health - Physical Health" =
+         list(#"min"       = ~ min(GLOBAL03, na.rm = TRUE),
+              #"max"       = ~ max(GLOBAL03, na.rm = TRUE),
+              #"IQR"       = ~ IQR(GLOBAL03, na.rm = TRUE),
+              "mean (sd)"  = ~ qwraps2::mean_sd(global_health_physical_2a_t_score, 
+                                                na_rm = TRUE, 
+                                                show_n = "never"),
+              "median" = ~  median(global_health_physical_2a_t_score, na.rm = TRUE)
+         ), 
+       "PROMIS Global Health - Mental Health" =
+         list(#"min"       = ~ min(GLOBAL04, na.rm = TRUE),
+              #"max"       = ~ max(GLOBAL04, na.rm = TRUE),
+              #"IQR"       = ~ IQR(GLOBAL04, na.rm = TRUE),
+              "mean (sd)"  = ~ qwraps2::mean_sd(global_health_mental_2a_t_score, 
+                                                na_rm = TRUE, 
+                                                show_n = "never"),
+              "median" = ~  median(global_health_mental_2a_t_score, na.rm = TRUE)
+         )
+       
+  )
+
+
+dataComplete <- dataComplete %>% 
+  mutate(country_table = dplyr::recode(country,  "usa" = "USA", "ger" = "Germany", "uk" = "UK"),
+         country_table1 = factor(country_table, levels = c("USA", "Germany", "UK")))
+
+summaryTableSociodemopgraphics <- summary_table(dplyr::group_by(dataComplete, country_table1), summaryStructureSociodemographics)
+
+print(summaryTableSociodemopgraphics, rtitle = "Sociodemographics")
+```
+
+<br>
+
+## Table 2: PROMIS
+```{r  results = "asis"}
+options(qwraps2_markup = 'markdown')
+
+summaryStructurePROMIS <-
+  list("PROMIS Physical Function T-Score" =
+         list("min"       = ~ round(min(pf_tscore, na.rm = TRUE),2),
+              "Floor (%)"  = ~ qwraps2::n_perc0(pf_tscore == min(pf_tscore), na_rm = TRUE),
+              "max"       = ~ round(max(pf_tscore, na.rm = TRUE),2),
+              "Ceiling (%)"  = ~ qwraps2::n_perc0(pf_tscore == max(pf_tscore), na_rm = TRUE),
+              "IQR"       = ~ round(IQR(pf_tscore, na.rm = TRUE),2),
+              "mean (sd)"  = ~ qwraps2::mean_sd(pf_tscore, 
+                                                na_rm = TRUE, 
+                                                show_n = "never"),
+              "median" = ~  round(median(pf_tscore, na.rm = TRUE),2)
+         ),
+       
+       "PROMIS Upper Extremities T-Score" =
+         list("min"       = ~ round(min(ue_tscore, na.rm = TRUE),2),
+              "Floor (%)"  = ~ qwraps2::n_perc0(ue_tscore == min(ue_tscore), na_rm = TRUE),
+              
+              "max"       = ~ round(max(ue_tscore, na.rm = TRUE),2),
+              "Ceiling (%)"  = ~ qwraps2::n_perc0(ue_tscore == max(ue_tscore), na_rm = TRUE),
+              
+              "IQR"       = ~ round(IQR(ue_tscore, na.rm = TRUE),2),
+              "mean (sd)"  = ~ qwraps2::mean_sd(ue_tscore, 
+                                                na_rm = TRUE, 
+                                                show_n = "never"),
+              "median" = ~  round(median(ue_tscore, na.rm = TRUE),2)
+         ),
+       
+       "PROMIS Pain Interference T-Score" =
+         list("min"       = ~ round(min(pi_tscore, na.rm = TRUE),2),
+              "Floor (%)"  = ~ qwraps2::n_perc0(pi_tscore == min(pi_tscore, na.rm = TRUE), na_rm = TRUE),
+              
+              "max"       = ~ round(max(pi_tscore, na.rm = TRUE),2),
+              "Ceiling (%)"  = ~ qwraps2::n_perc0(pi_tscore == max(pi_tscore, na.rm = TRUE), na_rm = TRUE),
+              
+              "IQR"       = ~ round(IQR(pi_tscore, na.rm = TRUE),2),
+              "mean (sd)"  = ~ qwraps2::mean_sd(pi_tscore, 
+                                                na_rm = TRUE, 
+                                                show_n = "never"),
+              "median" = ~  round(median(pi_tscore, na.rm = TRUE),2)
+         )
+  )
+
+
+summaryTable <- summary_table(dplyr::group_by(dataComplete, country_table), summaryStructurePROMIS)
+
+print(summaryTable, rtitle = "PROMIS Summary Statistics")
+```
+
+# Plausible Value Imputation
+
+## T-Scores for all items
+
+### Subset data of interest
+```{r}
+dataComplete_pv <- dataComplete %>% 
+  select(pf_tscore,
+         ue_tscore,
+         pi_tscore,
+         pf_tscore_se,
+         ue_tscore_se, 
+         pi_tscore_se,
+         sex, 
+         age,
+         age_50,
+         country_new,
+         GEWICHT, 
+         agegroup_numeric
+         )
+```
+
+<br>
+
+### Repeat data 25 times
+
+```{r}
+n = 25
+dataComplete_pv <- cbind(i = rep(1:n, each = nrow(dataComplete_pv)),
+                         dataComplete_pv[rep(1:nrow(dataComplete_pv), n), ])
+dataComplete_pv %>% glimpse()
+```
+
+<br>
+
+### Estimate plausible values from the normal distribution based on mean theta and mean SE.
+
+```{r}
+set.seed(42)
+dataComplete_pv$pf_pv <- apply(dataComplete_pv, 
+                            1, 
+                            function(x) rnorm(1, 
+                                              mean = x["pf_tscore"],  
+                                              x["pf_tscore_se"]))
+
+dataComplete_pv$ue_pv <- apply(dataComplete_pv, 
+                            1, 
+                            function(x) rnorm(1, 
+                                              mean = x["ue_tscore"],  
+                                              x["ue_tscore_se"]))
+
+dataComplete_pv$pi_pv <- apply(dataComplete_pv, 
+                            1, 
+                            function(x) rnorm(1, 
+                                              mean = x["pi_tscore"],  
+                                              x["pi_tscore_se"]))
+dataComplete_pv <- dataComplete_pv %>% 
+  mutate(country = as.factor(country_new))
+```
+
+<br>
+
+### Split the data based on each iteration
+```{r}
+sets_with_plausible_values <- split(dataComplete_pv, dataComplete_pv$i)
+```
+
+<br>
+
+### Visualize imputed T-Scores
+```{r}
+sets_with_plausible_values[[1]] %>% 
+  select(age) %>% 
+  summary()
+```
+
+```{r}
+sets_with_plausible_values[[5]] %>% 
+  drop_na(age) %>% 
+    mutate(agegroup = case_when(age >= 50  & age <= 59 ~ '50-59',
+                              age >= 60  & age <= 64 ~ '60-64',
+                              age >= 65  & age <= 69 ~ '65-69',
+                              age >= 70  & age <= 74 ~ '70-74',
+                              age >= 75  & age <= 79 ~ '75-79',
+                              age >= 80              ~ '80+')) %>% 
+  ggplot(aes(x = pf_pv, color = country)) +
+  geom_density()   +
+  theme_bw() +
+  xlab("T-Score PROMIS PF 2.0 Custom Short-Form") + 
+  ylab("density") +
+  facet_grid(vars(agegroup)) + 
+  scale_color_nord("victory_bonds") +
+  scale_x_continuous(breaks=c(10, 20, 30, 40, 50, 60, 70, 80, 90))
+```
+
+
+```{r}
+sets_with_plausible_values[[3]] %>% 
+  drop_na(age) %>% 
+  ggplot(aes(x = pf_pv, color = country)) +
+  geom_density()   +
+  theme_bw() +
+  xlab("T-Score PROMIS PF 2.0 Custom Short-Form") + 
+  ylab("density") +
+  scale_color_nord("victory_bonds") +
+  scale_x_continuous(breaks=c(10, 20, 30, 40, 50, 60, 70, 80, 90))
+```
+
+<br>
+
+### PI
+
+```{r}
+sets_with_plausible_values[[5]] %>% 
+  drop_na(age) %>% 
+    mutate(agegroup = case_when(age >= 50  & age <= 59 ~ '50-59',
+                              age >= 60  & age <= 64 ~ '60-64',
+                              age >= 65  & age <= 69 ~ '65-69',
+                              age >= 70  & age <= 74 ~ '70-74',
+                              age >= 75  & age <= 79 ~ '75-79',
+                              age >= 80              ~ '80+')) %>% 
+  ggplot(aes(x = pi_pv, color = country)) +
+  geom_density()   +
+  theme_bw() +
+  xlab("T-Score PROMIS PI 2.0 Custom Short-Form") + 
+  ylab("density") +
+  facet_grid(vars(agegroup)) + 
+  scale_color_nord("victory_bonds") +
+  scale_x_continuous(breaks=c(10, 20, 30, 40, 50, 60, 70, 80, 90))
+```
+
+
+```{r}
+sets_with_plausible_values[[5]] %>% 
+  drop_na(age) %>% 
+  ggplot(aes(x = pi_pv, color = country)) +
+  geom_density()   +
+  theme_bw() +
+  xlab("T-Score PROMIS PI 2.0 Custom Short-Form") + 
+  ylab("density") +
+  scale_color_nord("victory_bonds") +
+  scale_x_continuous(breaks=c(10, 20, 30, 40, 50, 60, 70, 80, 90))
+```
+
+
+## Correlation PV PF-UE value
+
+```{r}
+data_pv_correlation <- NULL
+
+for (i in 1:length(sets_with_plausible_values)) {
+  mean <- cor(sets_with_plausible_values[[i]]$pf_pv, 
+                                     sets_with_plausible_values[[i]]$ue_pv,  
+                                     method = "pearson", 
+                                     use = "complete.obs")
+  
+  data_pv_correlation <- rbind(data_pv_correlation, mean)
+}
+
+as_data_frame(data_pv_correlation) %>% 
+  summarise(mean_correlation = mean(V1))
+```
+<br>
+
+## Correlation PV PF-PI value
+```{r}
+data_pv_correlation <- NULL
+
+for (i in 1:length(sets_with_plausible_values)) {
+  mean <- cor(sets_with_plausible_values[[i]]$pf_pv, 
+                                     sets_with_plausible_values[[i]]$pi_pv,  
+                                     method = "pearson", 
+                                     use = "complete.obs")
+  
+  data_pv_correlation <- rbind(data_pv_correlation, mean)
+}
+
+as_data_frame(data_pv_correlation) %>% 
+  summarise(mean_correlation = mean(V1))
+```
+
+<br>
+
+## Inspecting pooled means
+
+```{r}
+data_pool <- list()
+
+for (i in 1:25) {
+  
+ data_pool[[i]] <- sets_with_plausible_values[[i]]$pf_pv
+        
+}
+
+data_pool <- as.data.frame(data_pool)
+
+colnames(data_pool) <- 1:25
+
+data_pool %>% 
+  mutate(mean_pf = rowMeans(.)) %>% glimpse()
+```
+
+<br>
+
+# Save Data
+
+## Sets with Plausible Values
+```{r}
+saveRDS(sets_with_plausible_values, "data/tidy/sets_with_plausible_values.rds")
+```
+
+## Saving data with latent trait estimates
+```{r}
+saveRDS(dataComplete, "data/tidy/dataComplete.rds")
+```
+<br>
+
+## Code Reproducibility
+```{r reproducibility_stuff}
+devtools::session_info() %>%
+    yaml::write_yaml("code reproducibility/sessioninfo_1_cleaning.yaml")
+```
+
+

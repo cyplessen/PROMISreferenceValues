@@ -1,0 +1,896 @@
+---
+title: "Patient-Specific Reference Data for PROMIS PF, UE, & PI"
+subtitle: "5. Additional Information"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+knit: (function(inputFile, encoding) {
+      rmarkdown::render(inputFile, 
+      encoding = encoding, 
+      output_dir = "html") })
+output:
+  html_document:
+    code_folding: show
+    highlight: pygment
+    keep_md: no
+    theme: lumen
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+---
+
+
+```{r setup, include=TRUE}
+knitr::opts_chunk$set(echo = TRUE)
+options(scipen = 999)
+
+library(tidyverse)
+library(summarytools)
+library(readxl)
+library(nord)
+library(gghalves)
+library(plotly)
+library(ggExtra)
+library(grid)
+library(gridExtra)
+library(viridis)
+library(cowplot)
+library(hrbrthemes)
+library(officer)
+library(flextable)
+library(qwraps2)
+library(MetBrewer)
+library(ggpubr)
+library(cowplot)
+library(tableHTML)
+```
+
+# Setup
+```{r, warnings = FALSE}
+dataComplete <- readRDS("data/tidy/dataComplete.rds")
+```
+
+# Additional Information
+
+## Figures
+
+### Physical Functioning
+
+<br>
+
+#### By Country
+
+##### Half Violin Plots
+```{r}
+dataComplete %>% 
+  mutate(Country = country_table) %>% 
+  ggplot(aes(x = factor(Country), y = pf_tscore, fill = Country)) +
+  geom_half_violin(side = "r")   +
+  #geom_violin()   +
+  geom_jitter(height = 0.2, 
+              width = 0.1, 
+              color = "#3B4252",
+              shape = 1) +
+  theme_bw() +
+  xlab("") + 
+  ylab("T-Score") +
+  scale_fill_nord("aurora") +
+  coord_flip() +
+  theme(legend.position="none")
+```
+
+<br>
+
+```{r}
+dataComplete %>% 
+  mutate(Country = country_table) %>% 
+  ggplot(aes(x = pf_tscore, fill = Country)) +
+ # geom_half_violin(side = "r")   +
+  #geom_violin()   +
+  geom_histogram() +
+  theme_bw() +
+  xlab("") + 
+  ylab("T-Score") +
+  scale_fill_nord("aurora") +
+  theme(legend.position="none")
+```
+
+
+#### By country and age group
+
+```{r}
+dataComplete %>% 
+    mutate(Country = country_table) %>% 
+  group_by(Country, agegroup) %>% 
+  #select(pf_tscore) %>%
+  ggplot(aes(x = factor(Country), y = pf_tscore, fill = Country)) +
+  geom_half_violin(side = "r")   +
+  theme_bw() +
+  xlab("") + 
+  ylab("tscore") +
+  scale_fill_nord("aurora") +
+  coord_flip() +
+  facet_grid(vars(agegroup))
+```
+
+<br>
+
+##### Density Plot A
+
+```{r}
+dataComplete %>% 
+  mutate(Country = country_table) %>% 
+  ggplot(aes(x = pf_tscore, color = Country)) +
+  geom_density()   +
+  theme_bw() +
+  xlab("T-Score PROMIS PF 2.0 Custom Short-Form") + 
+  ylab("density") +
+  facet_grid(vars(agegroup)) + 
+  scale_color_nord("victory_bonds") +
+  scale_x_continuous(breaks=c(20, 30, 40, 50, 60))
+```
+
+<br>
+
+##### Density Plot B
+
+```{r}
+dataComplete %>% 
+  mutate(Country = country_table) %>% 
+  ggplot(aes(x = pf_tscore, group =Country, fill = Country)) +
+  geom_density(adjust=1.5, alpha=.2) +
+  theme_minimal() +
+  xlab("T-Score PROMIS PF 2.0 Custom Short-Form") + 
+  ylab("Density") +
+  facet_grid(vars(agegroup)) + 
+  scale_color_nord("victory_bonds") +
+  scale_x_continuous(breaks=c(20, 30, 40, 50, 60)) 
+```
+
+```{r}
+dataComplete %>% 
+  mutate(Country = country_table) %>% 
+  ggplot(aes(x = pf_tscore, group =Country, fill = Country)) +
+  geom_density(adjust=1.5, alpha=.2) +
+  theme_minimal() +
+  xlab("T-Score PROMIS PF 2.0 Custom Short-Form") + 
+  ylab("density") +
+  facet_grid(vars(agegroup)) + 
+  scale_color_nord("victory_bonds") +
+  scale_x_continuous(breaks=c(20, 30, 40, 50, 60))
+```
+
+##### Boxplot
+
+```{r}
+dataComplete %>% 
+  mutate(Country = country_table) %>% 
+  ggplot(aes(x = pf_tscore, y = Country, fill = Country)) +
+  geom_violin(alpha = .3) +
+  geom_boxplot(width = .4, alpha = .3) +
+  theme_minimal() +
+  xlab("T-Score PROMIS PF 2.0 Custom Short-Form") + 
+  facet_grid(vars(agegroup)) + 
+  scale_fill_nord("victory_bonds") +
+  scale_x_continuous(breaks=c(20, 30, 40, 50, 60)) +
+  theme(legend.position="none")
+```
+
+<br>
+
+### Upper Extremities
+
+#### Density Plots
+
+```{r}
+dataComplete %>% 
+  mutate(Country = country_table) %>% 
+  ggplot(aes(x = ue_tscore, group =Country, fill = Country)) +
+  geom_density(adjust=1.5, alpha=.2) +
+  theme_minimal() +
+  xlab("T-Score PROMIS UE 2.0 Custom Short-Form") + 
+  ylab("Density") +
+  facet_grid(vars(agegroup)) + 
+  scale_color_nord("victory_bonds") +
+  scale_x_continuous(breaks=c(20, 30, 40, 50, 60)) 
+```
+
+
+### Pain interference
+
+#### Half Violin Plots
+```{r}
+dataComplete %>% 
+  group_by(country_table) %>% 
+  select(pi_tscore) %>%
+  ggplot(aes(x = factor(country_table), y = pi_tscore, fill = country_table)) +
+  geom_half_violin(side = "r")   +
+  geom_jitter(height = 0.2, 
+              width = 0.1, 
+              color = "#3B4252",
+              shape = 1) +
+  theme_bw() +
+  xlab("") + 
+  ylab("T-Score") +
+  scale_fill_nord("aurora") +
+  coord_flip() +
+  theme(legend.position="none")
+```
+
+
+```{r}
+dataComplete %>% 
+  group_by(country_table, agegroup) %>% 
+  select(pi_tscore) %>%
+  ggplot(aes(x = factor(country_table), y = pi_tscore, fill = country_table)) +
+  geom_half_violin(side = "r")   +
+  theme_bw() +
+  xlab("") + 
+  ylab("tscore") +
+  scale_fill_nord("aurora") +
+  coord_flip() +
+  facet_grid(vars(agegroup))
+```
+
+<br>
+
+#### Density Plots
+
+```{r}
+dataComplete %>% 
+  mutate(Country = country_table) %>% 
+  ggplot(aes(x = pi_tscore, group =Country, fill = Country)) +
+  geom_density(adjust=1.5, alpha=.2) +
+  theme_minimal() +
+  xlab("T-Score PROMIS PI Custom Short-Form") + 
+  ylab("Density") +
+  facet_grid(vars(agegroup)) + 
+  scale_color_nord("victory_bonds") +
+  scale_x_continuous(breaks=c(20, 30, 40, 50, 60)) 
+```
+##### Boxplot
+
+```{r}
+dataComplete %>% 
+  mutate(Country = country_table) %>% 
+  ggplot(aes(x = pi_tscore, y = Country, fill = Country)) +
+  geom_violin(alpha = .2) +
+  geom_boxplot(width = .4, alpha = .2) +
+  theme_minimal() +
+  xlab("T-Score PROMIS pi 2.0 Custom Short-Form") + 
+  facet_grid(vars(agegroup)) + 
+  scale_fill_nord("victory_bonds") +
+  scale_x_continuous(breaks=c(20, 30, 40, 50, 60)) +
+  theme(legend.position="none")
+```
+
+
+```{r}
+dataComplete %>% 
+  mutate(Country = country_table) %>% 
+  ggplot(aes(x = pi_tscore, group = Country, fill = Country)) +
+  geom_density(adjust=1.5, alpha=.2) +
+  theme_minimal() +
+  xlab("T-Score PROMIS PI Custom Short-Form") + 
+  ylab("density") +
+  facet_grid(vars(agegroup)) + 
+  scale_color_nord("victory_bonds") +
+  scale_x_continuous(breaks=c(20, 30, 40, 50, 60))
+```
+
+<br>
+
+### Correlation UE - PF
+
+```{r}
+dataComplete %>%  
+  ggplot(aes(x = pf_tscore, y = ue_tscore)) +
+  geom_point(shape = 1) +
+  geom_smooth(method=lm, se=F) +
+  theme_classic() + 
+  scale_color_viridis(discrete = TRUE, option = "D")+
+  scale_fill_viridis(discrete = TRUE) +
+  labs(x = "PROMIS PF 2.0 T-Score", y = "PROMIS UE 2.0 T-Score", 
+       title ="Correlation PROMIS Physical Functioning - Upper Extremities",
+       subtitle = "",
+       caption = "",
+       alt = "")
+```
+
+#### By age group
+```{r}
+dataComplete %>%  
+  ggplot(aes(x=pf_tscore, y=ue_tscore, color = agegroup)) +
+  geom_point(shape = 1) +
+  geom_smooth(method=lm, se=F) +
+  theme_classic() + 
+  scale_color_viridis(discrete = TRUE, option = "D")+
+  scale_fill_viridis(discrete = TRUE) +
+  labs(color = "Age Group",
+       x = "PROMIS PF 2.0 T-Score", y = "PROMIS UE 2.0 T-Score", 
+       title ="Correlation PROMIS Physical Functioning - Upper Extremities",
+       subtitle = "By Age Group",
+       caption = "",
+       alt = "") 
+```
+
+
+```{r}
+cor(dataComplete$pf_tscore, dataComplete$ue_tscore,  method = "pearson", use = "complete.obs")
+
+p <- ggscatter(dataComplete, x = "pf_tscore", y = "ue_tscore", 
+          add = "reg.line", 
+          add.params = list(color = "#5E81AC", fill = "lightgray"),
+          conf.int = TRUE, 
+          cor.method = "pearson",
+          xlab = "PF 2.0 Custom SF", 
+          ylab = "UE 2.0 Custom SF",
+          alpha = .7,
+          ) + 
+  stat_cor(p.accuracy = 0.001, r.accuracy = 0.01) 
+
+
+ggMarginal(p, type="histogram", fill = "#D08770", xparams = list(  bins=20))
+```
+
+<br>
+
+#### Differences between PF scale and UE subscale
+
+```{r}
+difference_density <- dataComplete %>% 
+  mutate(diff_pf_ue = pf_tscore - ue_tscore) %>% # negative: better UE than PF, positive: better PF than UE
+  relocate(diff_pf_ue) %>% 
+  arrange(diff_pf_ue) %>% 
+  ggplot(aes(x = diff_pf_ue)) +
+  geom_density() +
+  geom_text(x=10, y=0.06, label="PF > UE") + 
+  geom_text(x=-10, y=0.06, label="UE > PF") +
+  theme_minimal() + 
+  scale_x_continuous(limits=c(-20, 20))
+```
+
+```{r}
+difference_boxplot <- dataComplete %>% 
+  mutate(diff_pf_ue = pf_tscore - ue_tscore) %>% # negative: better UE than PF, positive: better PF than UE
+  relocate(diff_pf_ue) %>% 
+  arrange(diff_pf_ue) %>% 
+  ggplot(aes(x = diff_pf_ue)) +
+  geom_boxplot() +
+  #geom_text(x=10, y=0.3, label="PF > UE") + 
+  #geom_text(x=-10, y=0.3, label="UE > PF") +
+  theme_minimal() + 
+  scale_x_continuous(limits=c(-20, 20))
+
+grid.arrange(difference_density, difference_boxplot, ncol=1)
+```
+<br>
+
+
+```{r}
+p1 <- difference_density  + theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+p2 <- difference_boxplot +
+  xlab("Difference PF 2.0 Custom SF - UE Custom SF")
+legend <- get_legend(p1)   # get the legend of the first one plot
+
+# here the plots in a grid
+prow <- plot_grid( p1 + theme(legend.position="none"),
+           # here you add the percentage
+           p2 + theme(legend.position="none") + scale_y_continuous(labels = scales::percent),
+           align = 'v',
+           labels = c("A", "B"),
+           hjust = -1,
+           nrow = 2)
+
+# here you add the legend
+p <- plot_grid( prow, legend, rel_widths = c(3, .3))
+p
+```
+
+```{r}
+pf_ue_diff_larger_10 <- dataComplete %>% 
+  mutate(diff_pf_ue = pf_tscore - ue_tscore) %>% # negative: better UE than PF, positive: better PF than UE
+  relocate(diff_pf_ue) %>% 
+  arrange(diff_pf_ue) %>% 
+  filter(abs(diff_pf_ue) > 10)
+pf_ue_diff_larger_10
+```
+
+```{r}
+nrow(dataComplete) / nrow(pf_ue_diff_larger_10)
+```
+
+### Correlation Pf - PI
+
+```{r}
+dataComplete %>%  
+  ggplot(aes(x = pf_tscore, y = pi_tscore)) +
+  geom_point(shape = 1) +
+  geom_smooth(method=lm, se=F) +
+  theme_classic() + 
+  scale_color_viridis(discrete = TRUE, option = "D")+
+  scale_fill_viridis(discrete = TRUE) +
+  labs(x = "PROMIS PF 2.0 T-Score", y = "PROMIS PI T-Score", 
+       title ="Correlation PROMIS Physical Functioning - Pain interference",
+       subtitle = "",
+       caption = "",
+       alt = "")
+```
+
+#### By age group
+```{r}
+dataComplete %>%  
+  ggplot(aes(x=pf_tscore, y=pi_tscore, color = agegroup)) +
+  geom_point(shape = 1, alpha = .7) +
+  geom_smooth(method=lm, se=F) +
+  theme_classic() + 
+  scale_color_viridis(discrete = TRUE, option = "D")+
+  scale_fill_viridis(discrete = TRUE) +
+  labs(color = "Age Group",
+       x = "PROMIS PF 2.0 T-Score", y = "PROMIS PI T-Score", 
+       title ="Correlation PROMIS Physical Functioning - Pain Interference",
+       subtitle = "By Age Group",
+       caption = "",
+       alt = "") 
+```
+
+
+```{r}
+cor(dataComplete$pf_tscore, dataComplete$pi_tscore,  method = "pearson", use = "complete.obs")
+
+p <- ggscatter(dataComplete, x = "pf_tscore", y = "pi_tscore", 
+          add = "reg.line", 
+          add.params = list(color = "#5E81AC", fill = "lightgray"),
+          conf.int = TRUE, 
+          cor.method = "pearson",
+          xlab = "PF 2.0 Custom SF", 
+          ylab = "PI Custom SF",
+          alpha = .7,
+          ) + 
+  stat_cor(p.accuracy = 0.001, r.accuracy = 0.01) 
+
+ggMarginal(p, type="histogram", fill = "#D08770", xparams = list(  bins=20))
+```
+
+<br>
+
+# Included items with item stems
+```{r}
+pf_items <- c("PFA1", 
+              "PFA3", 
+              "PFA5", 
+              "PFA11", 
+              "PFA12", 
+              "PFA51", 
+              "PFA56", 
+              "PFB24", 
+              "PFC12", 
+              "PFC36r1", 
+              "PFC37", 
+              "PFC45r1", 
+              "PFC46", 
+              "PFM26", 
+              "PFA14r1", 
+              "PFA29r1", 
+              "PFA34", 
+              "PFA36", 
+              "PFB13", 
+              "PFB26", 
+              "PFB28r1", 
+              "PFB34")
+
+ue_items <- c(
+  "PFA14r1",
+  "PFA29r1",
+  "PFA34",
+  "PFA36",
+  "PFB13",
+  "PFB26",
+  "PFB28r1",
+  "PFB34"
+)
+
+pi_items <- c(
+  "PAININ3",
+  "PAININ9",
+  "PAININ12",
+  "PAININ13",
+  "PAININ22",
+  "PAININ31",
+  "PAININ34",
+  "PAININ36")
+```
+
+
+#### PF Items
+```{r}
+pf_items_usa <- read_excel("data/raw/ao5_items.xlsx", sheet = 3) %>% 
+  filter(variable %in% pf_items) %>% 
+  select("Item Code" = variable, 
+         "Item Stem" =  item) 
+
+read_excel("data/raw/ao5_items.xlsx", sheet = 4) %>% 
+  filter(Item %in% pf_items) %>% 
+  select("Item Code" = Item, 
+         "Item Stem" =  Itemtext) %>%
+  bind_rows(pf_items_usa) %>% 
+  dplyr::arrange(`Item Code`) %>% 
+  tableHTML(.) %>% 
+  write_tableHTML(., file = 'tables/pf_items.html')
+```
+
+#### UE Items
+```{r}
+ue_items_usa <- read_excel("data/raw/ao5_items.xlsx", sheet = 3) %>% 
+  filter(variable %in% ue_items) %>% 
+  select("Item Code" = variable, 
+         "Item Stem" =  item)
+
+read_excel("data/raw/ao5_items.xlsx", sheet = 4) %>% 
+  filter(Item %in% ue_items) %>% 
+  select("Item Code" = Item, 
+         "Item Stem" =  Itemtext) %>% 
+  bind_rows(ue_items_usa) %>% 
+  dplyr::arrange(`Item Code`) %>% 
+  tableHTML(.)
+```
+
+#### PI Items
+```{r}
+pi_items_usa <- read_excel("data/raw/ao5_items.xlsx", sheet = 3) %>% 
+  filter(variable %in% pi_items) %>% 
+  select("Item Code" = variable, 
+         "Item Stem" =  item)
+
+read_excel("data/raw/ao5_items.xlsx", sheet = 4) %>% 
+  filter(Item %in% pi_items) %>% 
+  select("Item Code" = Item,  
+         "Item Stem" =  Itemtext) %>% 
+    bind_rows(pi_items_usa) %>% 
+  dplyr::arrange(`Item Code`) %>% 
+  tableHTML(.) 
+```
+
+<br>
+
+# Plausible Values
+```{r}
+sets_with_plausible_values <- readRDS("data/tidy/sets_with_plausible_values.rds")
+```
+
+
+## PF
+
+```{r}
+hist_pf_pv <- data.frame(mean = sets_with_plausible_values[[1]]$pf_pv,
+         country = sets_with_plausible_values[[1]]$country_new ) %>% 
+  ggplot(aes(x = sets_with_plausible_values[[1]]$pf_pv, fill = as.factor(country))) +
+  geom_histogram(color="#e9ecef") +
+  theme_bw() +
+  ylab("") + 
+  xlab("T-Score") +
+  scale_fill_manual(values = met.brewer("Hokusai2",4)) +  
+  theme(legend.position="none") +
+  coord_cartesian(xlim = c(0,70)) +
+  ggtitle("Plausible Values")
+
+
+hist_pf <- dataComplete %>% 
+  mutate(Country = country_table) %>% 
+  ggplot(aes(x = pf_tscore, fill = Country)) +
+  geom_histogram(color="#e9ecef") +
+  theme_bw() +
+  ylab("") + 
+  xlab("T-Score") +
+  scale_fill_manual(values = met.brewer("Hokusai2",4)) +  
+  theme(legend.position="none") +
+  coord_cartesian(xlim = c(0,70))  +
+  ggtitle("Empirical Values")
+
+
+hist_pf_sum <- dataComplete %>% 
+  mutate(Country = country_table) %>% 
+  ggplot(aes(x = pf_sum_score, fill = Country)) +
+  geom_histogram(color="#e9ecef") +
+  theme_bw() +
+  ylab("") + 
+  xlab("Sum Scores") +
+  scale_fill_manual(values = met.brewer("Hokusai2",3)) +
+  theme(legend.position="none") +
+  ggtitle("Sum Scores")
+
+text <- paste0("Empirical Values > 60 = ", round((nrow(filter(dataComplete, pf_tscore > 60)) / nrow(dataComplete))  * 100, 2), "%")
+
+text_pf <- ggplot() + 
+  annotate("text", x = 4, y = 25, size=5, label = text) + 
+  theme_void()
+
+pf <- plot_grid(hist_pf,
+                text_pf,
+                hist_pf_pv,
+                hist_pf_sum,
+                ncol = 2,
+                align = "h",
+                axis = "b")
+
+title <- ggdraw() + 
+  draw_label(
+    "PROMIS Physical Functioning",
+    fontface = 'bold',
+    x = 0,
+    hjust = 0
+  ) +
+  theme(
+    # add margin on the left of the drawing canvas,
+    # so title is aligned with left edge of first plot
+    plot.margin = margin(0, 0, 0, 40)
+  )
+
+pf <- plot_grid(
+  title, pf,
+  ncol = 1,
+  # rel_heights values control vertical title margins
+  rel_heights = c(0.1, 1)
+)
+
+pf 
+```
+
+### High PF
+```{r}
+pf_items <- c("PFA1", 
+              "PFA3", 
+              "PFA5", 
+              "PFA11", 
+              "PFA12", 
+              "PFA51", 
+              "PFA56", 
+              "PFB24", 
+              "PFC12", 
+              "PFC36r1", 
+              "PFC37", 
+              "PFC45r1", 
+              "PFC46", 
+              "PFM26", 
+              "PFA14r1", 
+              "PFA29r1", 
+              "PFA34", 
+              "PFA36", 
+              "PFB13", 
+              "PFB26", 
+              "PFB28r1", 
+              "PFB34")
+
+dataComplete %>% 
+  filter(pf_tscore > 55) %>% 
+  select(pf_tscore,
+         ue_tscore, 
+         pf_sum_score,
+         pf_items
+         )
+```
+
+
+```{r}
+nrow(filter(dataComplete, pf_tscore > 60)) / nrow(dataComplete)
+```
+
+### Low PF
+```{r}
+dataComplete %>% 
+  filter(pf_tscore < 30)  %>% 
+  arrange(pf_tscore) %>% 
+  select(pf_tscore,
+         pf_sum_score,
+         pf_items
+  )
+```
+
+<br>
+
+## UE
+```{r}
+hist_ue_pv <- data.frame(mean = sets_with_plausible_values[[1]]$ue_pv,
+         country = sets_with_plausible_values[[1]]$country_new ) %>% 
+  ggplot(aes(x = mean, fill = as.factor(country))) +
+  geom_histogram() +
+    theme_bw() +
+  ylab("") + 
+  xlab("T-Score") +
+  scale_fill_nord("aurora") +
+  theme(legend.position="none") +
+  coord_cartesian(xlim = c(0,70)) +
+  ggtitle("Plausible Values")
+
+
+hist_ue <- dataComplete %>% 
+  mutate(Country = country_table) %>% 
+  ggplot(aes(x = ue_tscore, fill = Country)) +
+  geom_histogram() +
+  theme_bw() +
+  ylab("") + 
+  xlab("T-Score") +
+  scale_fill_nord("aurora") +
+  theme(legend.position="none") +
+  coord_cartesian(xlim = c(0,70))  +
+  ggtitle("Empirical Values")
+
+
+hist_ue_sum <- dataComplete %>% 
+  mutate(Country = country_table) %>% 
+  ggplot(aes(x = ue_sum_score, fill = Country)) +
+  geom_histogram(binwidth = 1) +
+  theme_bw() +
+  ylab("") + 
+  xlab("Sum Scores") +
+  scale_fill_nord("aurora") +
+  theme(legend.position="none") +
+  ggtitle("Sum Scores") 
+
+text <- paste0("Empirical Values > 55 = ", round((nrow(filter(dataComplete, ue_tscore > 55)) / nrow(dataComplete))  * 100, 2), "%")
+
+
+text_ue <- ggplot() + 
+  annotate("text", x = 4, y = 25, size=5, label = text) + 
+  theme_void()
+
+ue <- plot_grid(hist_ue,
+                text_ue,
+                hist_ue_pv,
+                hist_ue_sum,
+                ncol = 2,
+                align = "h",
+                axis = "b")
+
+title <- ggdraw() + 
+  draw_label(
+    "PROMIS Upper Extremities",
+    fontface = 'bold',
+    x = 0,
+    hjust = 0
+  ) +
+  theme(
+    # add margin on the left of the drawing canvas,
+    # so title is aligned with left edge of first plot
+    plot.margin = margin(0, 0, 0, 40)
+  )
+
+ue <- plot_grid(
+  title, ue,
+  ncol = 1,
+  # rel_heights values control vertical title margins
+  rel_heights = c(0.1, 1)
+)
+ue
+```
+
+```{r}
+ue_items <- c(
+  "PFA14r1",
+  "PFA29r1",
+  "PFA34",
+  "PFA36",
+  "PFB13",
+  "PFB26",
+  "PFB28r1",
+  "PFB34"
+)
+
+dataComplete %>% 
+  filter(ue_tscore > 55)  %>% 
+  arrange(ue_tscore) %>% 
+    select(ue_tscore,
+         ue_sum_score,
+         ue_items
+         )
+
+nrow(filter(dataComplete, ue_tscore > 55)) / nrow(dataComplete)
+```
+
+
+
+
+## PI
+```{r}
+hist_pi_pv <- data.frame(mean = sets_with_plausible_values[[1]]$pi_pv,
+         country = sets_with_plausible_values[[1]]$country_new ) %>% 
+  ggplot(aes(x = mean, fill = as.factor(country))) +
+  geom_histogram() +
+    theme_bw() +
+  ylab("") + 
+  xlab("T-Score") +
+  scale_fill_nord("aurora") +
+  theme(legend.position="none") +
+  coord_cartesian(xlim = c(min(dataComplete$pi_tscore),80)) +
+  ggtitle("Plausible Values")
+
+
+hist_pi <- dataComplete %>% 
+  mutate(Country = country_table) %>% 
+  ggplot(aes(x = pi_tscore, fill = Country)) +
+  geom_histogram() +
+  theme_bw() +
+  ylab("") + 
+  xlab("T-Score") +
+  scale_fill_nord("aurora") +
+  theme(legend.position="none") +
+  coord_cartesian(xlim = c(min(dataComplete$pi_tscore),80)) +
+  ggtitle("Empirical Values")
+
+
+hist_pi_sum <- dataComplete %>% 
+  mutate(Country = country_table) %>% 
+  ggplot(aes(x = pi_sum_score, fill = Country)) +
+  geom_histogram() +
+  theme_bw() +
+  ylab("") + 
+  xlab("Sum Scores") +
+  scale_fill_nord("aurora") +
+  theme(legend.position="none") +
+  ggtitle("Sum Scores")
+
+
+text <- paste0("Empirical Values < 41 = ", round((nrow(filter(dataComplete, pi_tscore < 41)) / nrow(dataComplete))  * 100, 2), "%")
+
+
+text_pi <- ggplot() + 
+  annotate("text", x = 4, y = 25, size=5, label = text) + 
+  theme_void()
+
+pi <- plot_grid(hist_pi,
+                text_pi,
+                hist_pi_pv,
+                hist_pi_sum,
+                ncol = 2,
+                align = "h",
+                axis = "b")
+pi
+
+title <- ggdraw() + 
+  draw_label(
+    "PROMIS Pain Interference",
+    fontface = 'bold',
+    x = 0,
+    hjust = 0
+  ) +
+  theme(
+    # add margin on the left of the drawing canvas,
+    # so title is aligned with left edge of first plot
+    plot.margin = margin(0, 0, 0, 40)
+  )
+
+pi <- plot_grid(
+  title, pi,
+  ncol = 1,
+  # rel_heights values control vertical title margins
+  rel_heights = c(0.1, 1)
+)
+pi
+```
+
+```{r}
+pi_items <- c(
+  "PAININ3",
+  "PAININ9",
+  "PAININ12",
+  "PAININ13",
+  "PAININ22",
+  "PAININ31",
+  "PAININ34",
+  "PAININ36")
+
+dataComplete %>% 
+  filter(pi_tscore < 41)  %>% 
+  arrange(pi_tscore) %>% 
+    select(pi_tscore,
+         pi_sum_score,
+         pi_items
+         )
+
+nrow(filter(dataComplete, pi_tscore < 41)) / nrow(dataComplete)
+```
+
+```{r reproducibility_stuff, include=FALSE}
+devtools::session_info() %>%
+    yaml::write_yaml("code reproducibility/sessioninfo_5.yaml")
+```

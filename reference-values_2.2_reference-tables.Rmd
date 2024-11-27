@@ -1,0 +1,229 @@
+---
+title: "Patient-Specific Reference Data for PROMIS PF, UE, & PI"
+subtitle: "2.2 Quantile Regression: Reference Tables"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+knit: (function(inputFile, encoding) {
+      rmarkdown::render(inputFile, 
+      encoding = encoding, 
+      output_dir = "html") })
+output:
+  html_document:
+    code_folding: show
+    highlight: pygment
+    keep_md: no
+    theme: cerulean
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+    numbersections: TRUE
+editor_options: 
+  chunk_output_type: inline
+---
+
+
+
+```{r setup, include=TRUE}
+knitr::opts_chunk$set(echo = TRUE)
+options(scipen = 999)
+library(plyr)
+library(tidyverse)
+library(haven)
+library(janitor)
+library(labelled)
+library(sjlabelled)
+library(sjPlot)
+library(summarytools)
+library(lordif)
+library(readxl)
+library(mirt)
+library(mirtCAT)
+library(mitools) # multiple imputation
+library(quantreg)
+library(mitml) # multiple imputation
+library(kableExtra)
+library(reshape)
+library(Amelia)
+library(qwraps2) # summary statistics
+library(kableExtra) # save html table
+library(nord)
+library(gghalves)
+library(plotly)
+library(viridis)
+library(svglite) # save svg
+library(flextable)
+library(officer) # specify saving options for word from flextable
+```
+
+# About
+
+This document outlines all necessary steps for creating the reference tables for the publication on patient-specific reference values of PROMIS Physical Functioning items in the USA, UK, and Germany.
+
+<br>
+
+# Setup
+
+```{r, warning=FALSE}
+models <- readRDS("data/tidy/models_age_50.rds") 
+```
+
+# Reference Tables
+
+## PF
+
+```{r}
+pf_pooled <- models$pf_pv$pooled$formula_4
+
+pf_pooled <- pf_pooled %>% 
+  mutate(upper = round(est + 1.96 * se, 1),
+         lower = round(est - 1.96 * se, 1),
+         value = paste0(sprintf("%.1f", est), " [", sprintf("%.1f", lower), "; ", sprintf("%.1f", upper), "]"),
+         par = dplyr::recode(par, 
+               country0 = "Germany", 
+               country1 = "UK",
+               country2 = "USA"))
+
+order <- c("USA", "UK", "Germany", "age_50", "sex")
+
+pf_table <- cast(pf_pooled, par ~ tau) %>%
+  slice(match(order, par)) 
+
+pf_table <- pf_table %>% 
+  select("Parameter" = par, everything()) %>% 
+  mutate(Parameter = str_replace(Parameter, "sex", "Sex")) %>% 
+    mutate(Parameter = str_replace(Parameter, "age_50", "Age"))
+
+ft_pf <- flextable(pf_table)
+
+ft_pf <- add_header_row(ft_pf,
+  colwidths = c(1, 13),
+  values = c("", "Quantiles with 95% CIs")
+)
+
+ft_pf <- theme_vanilla(ft_pf)
+
+ft_pf <- add_footer_lines(ft_pf, "Note: Reference values for USA, UK, and Germany. Sex: Negative values indicates lower values for women and positive values higher values for men.")
+ft_pf <- color(ft_pf, part = "footer", color = "#666666")
+ft_pf <- set_caption(ft_pf, caption = "General Population Reference Values for PROMIS Physical Functioning 2.0 Items")
+ft_pf
+```
+
+```{r}
+order <- c("USA", "UK", "Germany", "age_50", "sex")
+
+pf_pooled  %>% 
+  group_by(tau) %>% 
+  pivot_wider(names_from = par, values_from = c(est, se))
+
+  mutate(upper = round(est + 1.96 * se, 1),
+         lower = round(est - 1.96 * se, 1),
+         value = paste0(sprintf("%.1f", est), " [", sprintf("%.1f", lower), "; ", sprintf("%.1f", upper), "]"),
+         par = dplyr::recode(par, 
+               country0 = "Germany", 
+               country1 = "UK",
+               country2 = "USA")) %>% 
+  cast(., par ~ tau) %>%
+  slice(match(order, par)) #%>% 
+ # filter(tau == 0.2 & par %in% c("country2", "age_50", "sex")) 
+
+```
+
+## UE
+
+```{r}
+ue_pooled <- models$ue_pv$pooled$formula_4 %>% 
+  mutate(upper = round(est + 1.96 * se, 1),
+         lower = round(est - 1.96 * se, 1),
+         value = paste0(sprintf("%.1f", est), " [", sprintf("%.1f", lower), "; ", sprintf("%.1f", upper), "]"),
+         par = dplyr::recode(par, 
+               country0 = "Germany", 
+               country1 = "UK",
+               country2 = "USA"))
+
+order <- c("USA", "UK", "Germany", "age_50", "sex")
+
+ue_table <- cast(ue_pooled, par ~ tau) %>%
+  slice(match(order, par)) %>% 
+  select("Parameter" = par, everything()) %>% 
+  mutate(Parameter = str_replace(Parameter, "sex", "Sex")) %>% 
+  mutate(Parameter = str_replace(Parameter, "age_50", "Age"))
+
+
+ft_ue <- flextable(ue_table)
+
+ft_ue <- add_header_row(ft_ue,
+  colwidths = c(1, 13),
+  values = c("", "Quantiles with 95% CIs")
+)
+ft_ue <- theme_vanilla(ft_ue)
+
+ft_ue <- add_footer_lines(ft_ue, "Note: Reference values for USA, UK, and Germany. Sex: Negative values indicates lower values for women and positive values higher values for men.")
+ft_ue <- color(ft_ue, part = "footer", color = "#666666")
+ft_ue <- set_caption(ft_ue, caption = "General Population Reference Values for PROMIS Upper Extremities 2.0 Items")
+ft_ue
+```
+
+<br>
+
+## PI
+
+```{r}
+pi_pooled <- models$pi_pv$pooled$formula_4 %>% 
+  mutate(upper = round(est + 1.96 * se, 1),
+         lower = round(est - 1.96 * se, 1),
+         value = paste0(sprintf("%.1f", est), " [", sprintf("%.1f", lower), "; ", sprintf("%.1f", upper), "]"),
+         par = dplyr::recode(par, 
+               country0 = "Germany", 
+               country1 = "UK",
+               country2 = "USA"))
+
+order <- c("USA", "UK", "Germany", "age_50", "sex")
+
+pi_table <- cast(pi_pooled, par ~ tau) %>%
+  slice(match(order, par)) %>% 
+  select("Parameter" = par, everything()) %>% 
+  mutate(Parameter = str_replace(Parameter, "sex", "Sex"))  %>% 
+  mutate(Parameter = str_replace(Parameter, "age_50", "Age"))
+
+
+ft_pi <- flextable(pi_table)
+
+ft_pi <- add_header_row(ft_pi,
+  colwidths = c(1, 13),
+  values = c("", "Quantiles with 95% CIs")
+)
+
+ft_pi <- theme_vanilla(ft_pi)
+
+ft_pi <- add_footer_lines(ft_pi, "Note: Reference values for USA, UK, and Germany. Sex: Negative values indicates lower values for women and positive values higher values for men.")
+
+ft_pi <- color(ft_pi, part = "footer", color = "#666666")
+
+ft_pi <- set_caption(ft_pi, caption = "General Population Reference Values for PROMIS Pain Interference Items")
+
+ft_pi
+```
+
+
+<br>
+
+# Save as docx
+
+```{r}
+sect_properties <- prop_section(
+  page_size = page_size(orient = "landscape",
+                        width = 8.3, height = 11.7),
+  type = "continuous",
+  page_margins = page_mar()
+)
+
+save_as_docx(`PROMIS Physical Function` = ft_pf, 
+             `PROMIS Upper Extremities` = ft_ue,
+             `PROMIS Pain Interference` = ft_pi,
+  path = "tables/referencetables_pf_ue_pi_without_weights.docx", 
+  pr_section = sect_properties)
+```
+
+```{r reproducibility_stuff, include=FALSE}
+devtools::session_info() %>%
+    yaml::write_yaml("code reproducibility/sessioninfo_2.2.yaml")
+```

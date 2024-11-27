@@ -1,0 +1,1074 @@
+---
+title: "Patient-Specific Reference Data for PROMIS PF, UE, & PI"
+subtitle: "4. Median Regressions"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+knit: (function(inputFile, encoding) {
+      encoding = encoding, 
+      output_dir = "html") }) # print html in html folder
+      rmarkdown::render(inputFile, 
+output:
+  html_document:
+    code_folding: show
+    highlight: pygment
+    keep_md: no
+    theme: lumen
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+    numbersections: TRUE
+editor_options: 
+  chunk_output_type: console
+---
+
+
+```{r setup, include=TRUE}
+knitr::opts_chunk$set(echo = TRUE)
+options(scipen = 999)
+library(plyr)
+library(tidyverse)
+library(haven)
+library(janitor)
+library(labelled)
+library(sjlabelled)
+library(sjPlot)
+library(summarytools)
+library(lordif)
+library(readxl)
+library(mirt)
+library(mirtCAT)
+library(mitools) # multiple imputation
+library(quantreg)
+library(mitml) # multiple imputation
+library(kableExtra)
+library(reshape)
+library(Amelia)
+library(qwraps2) # summary statistics
+library(kableExtra) # save html table
+library(nord)
+library(gghalves)
+library(plotly)
+library(viridis)
+library(hrbrthemes)
+library(svglite) # save svg
+library(flextable)
+library(skimr)
+library(broom)
+library(readxl)
+library(effectsize)
+```
+
+# Overview
+
+This document outlines all necessary steps for modeling regressions on country differences used for the publication on patient-specific reference values of PROMIS Physical Functioning items in the USA, UK, and Germany.
+
+<br>
+
+```{r warning=FALSE}
+dataCompleteLatent <- readRDS("data/tidy/dataComplete.rds")
+```
+
+
+```{r}
+dataCompleteLatent %>% 
+  select(pf_tscore,
+         ue_tscore,
+         pi_tscore,
+         country,
+         age,
+         sex) %>%
+  skim()
+```
+<br>
+
+## PF
+```{r}
+hist(dataCompleteLatent$pf_tscore)
+qqnorm(dataCompleteLatent$pf_tscore)
+qqline(dataCompleteLatent$pf_tscore)
+```
+
+<br>
+
+### All countries
+```{r}
+dataCompleteLatent %>% 
+  ggplot(aes(x = pf_tscore, color = country, fill = country)) +
+geom_density(alpha=0.3) +
+  facet_wrap(~agegroup, ncol = 1) +
+  scale_fill_viridis(discrete = TRUE) +
+    scale_color_viridis(discrete = TRUE) +
+      theme_ipsum() +
+    theme(
+      panel.spacing = unit(0.1, "lines"),
+      strip.text.x = element_text(size = 8))
+```
+
+
+## UE
+```{r}
+hist(dataCompleteLatent$ue_tscore)
+qqnorm(dataCompleteLatent$ue_tscore)
+qqline(dataCompleteLatent$ue_tscore)
+```
+```{r}
+dataCompleteLatent %>% 
+  ggplot(aes(x = ue_tscore, color = country, fill = country)) +
+geom_density(alpha=0.3) +
+  facet_wrap(~agegroup, ncol = 1) +
+  scale_fill_viridis(discrete = TRUE) +
+    scale_color_viridis(discrete = TRUE) +
+      theme_ipsum() +
+    theme(
+      panel.spacing = unit(0.1, "lines"),
+      strip.text.x = element_text(size = 8))
+
+ue_distribution_by_age_group <- dataCompleteLatent %>% 
+  ggplot(aes(x = ue_tscore, color = country, fill = country)) +
+  geom_histogram(alpha=0.3, position = "dodge") +
+  facet_wrap(~agegroup, ncol = 1) +
+  scale_fill_viridis(discrete = TRUE) +
+  scale_color_viridis(discrete = TRUE) +
+  theme_ipsum() +
+  theme(
+    panel.spacing = unit(0.1, "lines"),
+    strip.text.x = element_text(size = 10)) 
+
+
+dataCompleteLatent %>% 
+  ggplot(aes(x = ue_tscore, color = country, fill = country)) +
+  geom_histogram(alpha=0.3, position = "dodge") +
+  scale_fill_viridis(discrete = TRUE) +
+  scale_color_viridis(discrete = TRUE) +
+  theme_ipsum() +
+  theme(
+    panel.spacing = unit(0.1, "lines"),
+    strip.text.x = element_text(size = 10)) 
+
+
+ue_distribution_by_age_group
+
+```
+
+<br>
+
+## PI
+```{r}
+hist(dataCompleteLatent$pi_tscore)
+qqnorm(dataCompleteLatent$pi_tscore)
+qqline(dataCompleteLatent$pi_tscore)
+```
+
+```{r}
+dataCompleteLatent %>% 
+  ggplot(aes(x = pi_tscore, fill = country)) +
+  geom_histogram(position = "dodge") +
+  facet_wrap(~agegroup) +
+  scale_fill_viridis(discrete = TRUE) +
+  theme_minimal()
+```
+
+## PF
+
+
+```{r}
+dataCompleteLatent %>% 
+  mutate(agegroup = as.factor(agegroup)) %>% 
+  ggplot(aes(x = ue_tscore, color = country)) +
+  geom_histogram() +
+  facet_wrap(~agegroup) +
+  theme_minimal()
+```
+
+## Model 1: Null-Model
+
+### PF
+
+#### LR
+```{r}
+lr_pf_1 <- lm("pf_tscore ~ 1", dataCompleteLatent)
+
+summary(lr_pf_1)
+confint(lr_pf_1)
+```
+
+#### QR
+```{r}
+qr_pf_1 <- quantreg::rq("pf_tscore ~ 1", 
+                        data = dataCompleteLatent)
+summary(qr_pf_1)
+```
+
+<br>
+
+### UE
+
+#### LR
+```{r}
+lr_ue_1 <- lm("ue_tscore ~ 1", dataCompleteLatent)
+
+summary(lr_ue_1)
+```
+
+#### QR
+
+```{r}
+qr_ue_1 <- quantreg::rq("ue_tscore ~ 1", 
+                        data = dataCompleteLatent)
+
+summary(qr_ue_1)
+```
+
+### PI
+
+#### LR
+```{r}
+lr_pi_1 <- lm("pi_tscore ~ 1", dataCompleteLatent)
+
+summary(lr_pi_1)
+```
+
+#### QR
+```{r}
+qr_pi_1 <- rq("pi_tscore ~ 1", 
+              data= dataCompleteLatent)
+
+summary(qr_pi_1)
+```
+
+```{r}
+# anova(lr_pf_country, lr_pf_country_age) # missings need to be removed
+```
+
+
+
+## Model 2: Country
+```{r}
+lr_pf_country <- lm("pf_tscore ~ country", dataCompleteLatent)
+
+summary(lr_pf_country)
+confint(lr_pf_country)
+```
+
+
+```{r}
+lr_ue_country <- lm("ue_tscore ~ country", dataCompleteLatent)
+
+summary(lr_ue_country)
+confint(lr_ue_country)
+```
+
+
+```{r}
+lr_pi_country <- lm("pi_tscore ~ country", dataCompleteLatent)
+
+summary(lr_pi_country)
+confint(lr_pi_country)
+```
+
+<br>
+
+## Model 3: Country + Age
+```{r}
+lr_pf_country_age <- lm("pf_tscore ~ country + age", dataCompleteLatent)
+
+summary(lr_pf_country_age)
+confint(lr_pf_country_age)
+
+lr_ue_country_age <- lm("ue_tscore ~ country + age", dataCompleteLatent)
+
+summary(lr_ue_country_age)
+confint(lr_ue_country_age)
+
+lr_pi_country_age <- lm("pi_tscore ~ country + age", dataCompleteLatent)
+
+summary(lr_pi_country_age)
+confint(lr_pi_country_age)
+```
+<br>
+
+## Model 4: `country` + `age` + `sex` 
+
+### PF - With USA as Intercept
+
+#### LR
+
+```{r}
+table(dataCompleteLatent$country)
+
+str(dataCompleteLatent$country)
+
+dataCompleteLatent$country <- factor(dataCompleteLatent$country, levels = c("usa", "ger", "uk"))
+```
+
+```{r}
+lr_pf_country_age_sex <- lm("pf_tscore ~ country + age_50 + sex", dataCompleteLatent)
+
+summary(lr_pf_country_age_sex)
+confint(lr_pf_country_age_sex)
+```
+
+<br>
+
+#### QR
+
+```{r}
+qr_pf_country_age_sex <- rq("pf_tscore ~ country + age_50 + sex", 
+                            data = dataCompleteLatent, 
+                            tau = .5)
+
+summary(qr_pf_country_age_sex)
+```
+
+### PF - With Intercept
+
+#### LR
+
+```{r}
+lr_pf_country_age_sex <- lm("pf_tscore ~ country + age_50 + sex", 
+                            dataCompleteLatent)
+
+summary(lr_pf_country_age_sex)
+confint(lr_pf_country_age_sex)
+```
+
+<br>
+
+#### QR
+
+```{r}
+qr_pf_country_age_sex <- rq("pf_tscore ~ country + age_50 + sex", 
+                            data = dataCompleteLatent, 
+                            tau = .5)
+
+summary(qr_pf_country_age_sex)
+```
+
+
+<br>
+
+#### Cohens´d
+
+##### Germany - UK
+```{r}
+germany <- dataCompleteLatent %>% 
+  filter(country_table == "Germany") %>% 
+  select(germany_pf_tscore = pf_tscore) %>% 
+  na.omit(germany_pf_tscore)
+
+uk <- dataCompleteLatent %>% 
+  filter(country_table == "UK") %>% 
+  select(uk_pf_tscore = pf_tscore) %>% 
+  na.omit(uk_pf_tscore)
+
+bind_cols_fill <- function(df_list) {
+
+  max_rows <- map_int(df_list, nrow) %>% max()
+  
+  map(df_list, function(df) {
+    if(nrow(df) == max_rows) return(df)
+    first <- names(df)[1] %>% sym()
+    df %>% add_row(!!first := rep(NA, max_rows - nrow(df)))
+  }) %>% bind_cols()
+}
+
+data_germany_uk <- bind_cols_fill(list(germany, uk))
+
+cohens_d("germany_pf_tscore", "uk_pf_tscore", 
+         data = data_germany_uk)
+
+#rank_epsilon_squared(germany_pf_tscore ~ uk_pf_tscore, 
+#         data = data_germany_uk)
+```
+
+<br>
+
+##### Germany - USA
+```{r}
+germany <- dataCompleteLatent %>% 
+  filter(country_table == "Germany") %>% 
+  select(germany_pf_tscore = pf_tscore) %>% 
+  na.omit(germany_pf_tscore)
+
+usa <- dataCompleteLatent %>% 
+  filter(country_table == "USA") %>% 
+  select(usa_pf_tscore = pf_tscore) %>% 
+  na.omit(usa_pf_tscore)
+
+data_germany_usa <- bind_cols_fill(list(germany, usa))
+
+cohens_d("germany_pf_tscore", "usa_pf_tscore", 
+         data = data_germany_usa)
+```
+
+##### UK - USA
+
+
+```{r}
+data_uk_usa <- bind_cols_fill(list(usa, uk))
+
+cohens_d("uk_pf_tscore", "usa_pf_tscore", 
+         data = data_uk_usa)
+```
+
+#### Table
+
+https://lachlandeer.github.io/post/quantile-regression-with-tidyverse/ 
+
+```{r}
+quants <- c(0.25, 0.5, 0.75)
+
+lr_pf_country_age_sex <- lm("pf_tscore ~ country + age_50 + sex", dataCompleteLatent)
+
+qr_pf <- map(quants, ~rq("pf_tscore ~ country + age_50 + sex", 
+                         data = dataCompleteLatent, 
+                         tau = .x)
+)
+
+stargazer::stargazer(lr_pf_country_age_sex, qr_pf, 
+                     order = c(5, 1, 2, 3, 4),
+                     rq.se = "boot",
+                     ci = TRUE,
+                     column.labels = c("OLS", paste("tau = ", quants)),
+                     covariate.labels = c("Intercept (USA)",
+                                          "Germany",
+                                          "UK",
+                                          "Age",
+                                          "Sex"),
+                     dep.var.labels = "PROMIS Physical Functioning 2.0",
+                     #omit = c("Constant"),
+                     model.numbers = TRUE,
+                     model.names =  FALSE,
+                     keep.stat = c('n'),
+                     type ='text',
+                     out = "tables/country_comparison_pf_table_intercept.html"
+                     )
+```
+
+
+
+<br>
+
+#### Plot
+
+```{r}
+qr_pf_tidy <- map(qr_pf, ~broom::tidy(.x, se = "boot",
+                                      conf.int = T)) %>%
+            bind_rows()
+
+ols_tidy <- tidy(lr_pf_country_age_sex)
+
+country_difference_pf_plot <- qr_pf_tidy %>%
+  ggplot(aes(x = tau,
+             y = estimate
+             )
+         ) + # the data we want to plot - in our case the tidied quantile regression output
+  geom_point(color = "#27408b", 
+             size = 3
+             ) + # plots the coefficient estimates
+  geom_line(color="#27408b", 
+            size = 1
+            ) + # adds a line connecting the coefficient estimates
+  geom_errorbar(aes(
+    ymin = conf.low,
+    ymax = conf.high
+      ), 
+    width = 0.05,
+    size  = 0.3,
+    position = position_dodge(.9)
+    ) + # adds the confidence intervals as error bars
+  geom_hline(data = ols_tidy, 
+             aes(yintercept = estimate), 
+             color = "red"
+             ) + # add OLS estimate - note it is from another data set which is totally OK
+  facet_wrap(~term, 
+             scales="free", 
+             ncol=2
+             ) + # one plot per explanatory variable, subplots over 2 columns
+  theme_minimal()
+
+country_difference_pf_plot
+```
+
+### PF - Without Intercept
+
+#### LR
+
+```{r}
+lr_pf_country_age_sex <- lm("pf_tscore ~ country + age_50 + sex - 1", dataCompleteLatent)
+
+summary(lr_pf_country_age_sex)
+confint(lr_pf_country_age_sex)
+```
+
+<br>
+
+#### QR
+
+```{r}
+qr_pf_country_age_sex <- rq("pf_tscore ~ country + age_50 + sex - 1", 
+                            data = dataCompleteLatent, 
+                            tau = .5)
+
+summary(qr_pf_country_age_sex)
+```
+
+
+<br>
+
+
+#### Table
+
+https://lachlandeer.github.io/post/quantile-regression-with-tidyverse/ 
+
+```{r}
+quants <- c(0.25, 0.5, 0.75)
+
+lr_pf_country_age_sex <- lm("pf_tscore ~ country + age_50 + sex -1", dataCompleteLatent)
+
+qr_pf <- map(quants, ~rq("pf_tscore ~ country + age_50 + sex -1", 
+                         data = dataCompleteLatent, 
+                         tau = .x)
+)
+
+stargazer::stargazer(lr_pf_country_age_sex, qr_pf, 
+                     rq.se = "boot",
+                     ci = TRUE,
+                     column.labels = c("OLS", paste("tau = ", quants)),
+                     covariate.labels = c("USA",
+                                          "Germany",
+                                          "UK",
+                                          "Age",
+                                          "Sex"),
+                     dep.var.labels = "PROMIS Physical Functioning 2.0",
+                     #omit = c("Constant"),
+                     model.numbers = TRUE,
+                     model.names =  FALSE,
+                     keep.stat = c('n'),
+                     type ='text',
+                     out = "tables/country_comparison_pf_table.html"
+                     )
+```
+
+<br>
+
+#### Plot
+
+```{r}
+qr_pf_tidy <- map(qr_pf, ~broom::tidy(.x, se = "boot",
+                                      conf.int = T)) %>%
+            bind_rows()
+
+ols_tidy <- tidy(lr_pf_country_age_sex)
+
+country_difference_pf_plot <- qr_pf_tidy %>%
+  ggplot(aes(x = tau,
+             y = estimate
+             )
+         ) + # the data we want to plot - in our case the tidied quantile regression output
+  geom_point(color = "#27408b", 
+             size = 3
+             ) + # plots the coefficient estimates
+  geom_line(color="#27408b", 
+            size = 1
+            ) + # adds a line connecting the coefficient estimates
+  geom_errorbar(aes(
+    ymin = conf.low,
+    ymax = conf.high
+      ), 
+    width = 0.05,
+    size  = 0.3,
+    position = position_dodge(.9)
+    ) + # adds the confidence intervals as error bars
+  geom_hline(data = ols_tidy, 
+             aes(yintercept = estimate), 
+             color = "red"
+             ) + # add OLS estimate - note it is from another data set which is totally OK
+  facet_wrap(~term, 
+             scales="free", 
+             ncol=2
+             ) + # one plot per explanatory variable, subplots over 2 columns
+  theme_minimal()
+
+country_difference_pf_plot
+```
+
+<br>
+
+### UE - With Intercept
+
+#### LR
+
+```{r}
+lr_ue_country_age_sex <- lm("ue_tscore ~ country + age + sex", dataCompleteLatent)
+
+summary(lr_ue_country_age_sex)
+confint(lr_ue_country_age_sex)
+```
+
+#### QR
+
+```{r}
+qr_ue_country_age_sex <- rq("ue_tscore ~ country + age_50 + sex", 
+                            data = dataCompleteLatent)
+
+summary(qr_ue_country_age_sex)
+```
+
+#### Table
+
+```{r}
+quants <- .5
+
+qr_ue <- map(quants, ~rq("ue_tscore ~ country + age_50 + sex", 
+                         data = dataCompleteLatent, 
+                         tau = .x))
+
+lr_ue_country_age_sex <- lm("ue_tscore ~ country + age_50 + sex", 
+                            dataCompleteLatent)
+
+stargazer::stargazer(lr_ue_country_age_sex, 
+                     qr_ue, 
+                     rq.se = "boot",
+                     order = c(5,1,2,3,4),
+                     ci = TRUE,
+                     column.labels = c("OLS", paste("tau = ", quants)),
+                     covariate.labels = c("Intercept (USA)",
+                                          "Germany",
+                                          "UK",
+                                          "Age",
+                                          "Sex"),
+                     dep.var.labels = "PROMIS Upper Extremities 2.0",
+                     # omit = c("Constant"),
+                     model.numbers = TRUE,
+                     model.names =  FALSE,
+                     keep.stat = c('n'),
+                     type ='text',
+                     out = "tables/country_comparison_ue_table_intercept.txt")
+
+stargazer::stargazer(lr_ue_country_age_sex, 
+                     qr_ue, 
+                     order = c(5,1,2,3,4),
+                     
+                     rq.se = "boot",
+                     ci = TRUE,
+                     column.labels = c("OLS", paste("tau = ", quants)),
+                     covariate.labels = c("Intercept (USA)",
+                                          "Germany",
+                                          "UK",
+                                          "Age",
+                                          "Sex"),
+                     dep.var.labels = "PROMIS Upper Extremities 2.0",
+                     #omit = c("Constant"),
+                     model.numbers = TRUE,
+                     model.names =  FALSE,
+                     keep.stat = c('n'),
+                     type ='text',
+                     out = "tables/country_comparison_ue_table_intercept.html")
+```
+
+#### Cohens´d
+
+##### Germany - UK
+```{r}
+germany_ue <- dataCompleteLatent %>% 
+  filter(country_table == "Germany") %>% 
+  select(germany_ue_tscore = ue_tscore) %>% 
+  na.omit(germany_ue_tscore)
+
+uk_ue <- dataCompleteLatent %>% 
+  filter(country_table == "UK") %>% 
+  select(uk_ue_tscore = ue_tscore) %>% 
+  na.omit(uk_ue_tscore)
+
+bind_cols_fill <- function(df_list) {
+
+  max_rows <- map_int(df_list, nrow) %>% max()
+  
+  map(df_list, function(df) {
+    if(nrow(df) == max_rows) return(df)
+    first <- names(df)[1] %>% sym()
+    df %>% add_row(!!first := rep(NA, max_rows - nrow(df)))
+  }) %>% bind_cols()
+}
+
+data_germany_uk_ue <- bind_cols_fill(list(germany_ue, uk_ue))
+
+cohens_d("germany_ue_tscore", "uk_ue_tscore", 
+         data = data_germany_uk_ue)
+
+```
+
+<br>
+
+das kann nicht stimmen!!!
+##### Germany - USA
+```{r}
+usa_ue <- dataCompleteLatent %>% 
+  filter(country_table == "USA") %>% 
+  select(usa_ue_tscore = ue_tscore) %>% 
+  na.omit(usa_ue_tscore)
+
+data_germany_usa_ue <- bind_cols_fill(list(germany_ue, usa_ue))
+
+cohens_d("germany_ue_tscore", "usa_ue_tscore", 
+         data = data_germany_usa_ue)
+```
+
+##### UK - USA
+```{r}
+data_uk_usa_ue <- bind_cols_fill(list(uk_ue, usa_ue))
+
+cohens_d("uk_ue_tscore", "usa_ue_tscore", 
+         data = data_uk_usa_ue)
+```
+
+### UE - Without Intercept
+
+#### Table
+
+```{r}
+quants <- .5
+
+qr_ue <- map(quants, ~rq("ue_tscore ~ country + age_50 + sex - 1", 
+                         data = dataCompleteLatent, 
+                         tau = .x))
+
+lr_ue_country_age_sex <- lm("ue_tscore ~ country + age_50 + sex - 1", 
+                            dataCompleteLatent)
+
+stargazer::stargazer(lr_ue_country_age_sex, 
+                     qr_ue, 
+                     rq.se = "boot",
+                     ci = TRUE,
+                     column.labels = c("OLS", paste("tau = ", quants)),
+                     covariate.labels = c("Germany",
+                                          "UK",
+                                          "USA",
+                                          "Age",
+                                          "Sex"),
+                     dep.var.labels = "PROMIS Upper Extremities 2.0",
+                     omit = c("Constant"),
+                     model.numbers = TRUE,
+                     model.names =  FALSE,
+                     keep.stat = c('n'),
+                     type ='text',
+                     out = "tables/country_comparison_ue_table.html")
+```
+
+https://stats.stackexchange.com/questions/78022/cause-of-singularity-in-matrix-for-quantile-regression 
+
+<br>
+
+#### Plot
+
+
+ci?
+```{r}
+qr_ue_tidy <- map(qr_ue, ~broom::tidy(.x, se = "boot",
+                                      conf.int = T)) %>%
+            bind_rows()
+
+ols_tidy <- tidy(lr_ue_country_age_sex)
+
+country_difference_ue_plot <- qr_ue_tidy %>%
+  ggplot(aes(x = tau,
+             y = estimate
+             )
+         ) + # the data we want to plot - in our case the tidied quantile regression output
+  geom_point(color = "#27408b", 
+             size = 3
+             ) + # plots the coefficient estimates
+  geom_line(color="#27408b", 
+            size = 1
+            ) + # adds a line connecting the coefficient estimates
+  geom_errorbar(aes(
+    ymin = conf.low,
+    ymax = conf.high
+      ), 
+    width = 0.05,
+    size  = 0.3,
+    position = position_dodge(.9)
+    ) + # adds the confidence intervals as error bars
+  geom_hline(data = ols_tidy, 
+             aes(yintercept = estimate), 
+             color = "red"
+             ) + # add OLS estimate - note it is from another data set which is totally OK
+  facet_wrap(~term, 
+             scales="free", 
+             ncol=2
+             ) + # one plot per explanatory variable, subplots over 2 columns
+  theme_minimal()
+
+country_difference_ue_plot
+```
+
+<br>
+
+### PI - With intercept
+
+#### QR
+
+
+#### Cohens´d
+
+##### Germany - UK
+```{r}
+germany_pi <- dataCompleteLatent %>% 
+  filter(country_table == "Germany") %>% 
+  select(germany_pi_tscore = pi_tscore) %>% 
+  na.omit(germany_pi_tscore)
+
+uk_pi <- dataCompleteLatent %>% 
+  filter(country_table == "UK") %>% 
+  select(uk_pi_tscore = pi_tscore) %>% 
+  na.omit(uk_pi_tscore)
+
+bind_cols_fill <- function(df_list) {
+
+  max_rows <- map_int(df_list, nrow) %>% max()
+  
+  map(df_list, function(df) {
+    if(nrow(df) == max_rows) return(df)
+    first <- names(df)[1] %>% sym()
+    df %>% add_row(!!first := rep(NA, max_rows - nrow(df)))
+  }) %>% bind_cols()
+}
+
+data_germany_uk_pi <- bind_cols_fill(list(germany_pi, uk_pi))
+
+cohens_d("germany_pi_tscore", "uk_pi_tscore", 
+         data = data_germany_uk_pi)
+
+```
+
+<br>
+
+
+##### Germany - USA
+```{r}
+usa_pi <- dataCompleteLatent %>% 
+  filter(country_table == "USA") %>% 
+  select(usa_pi_tscore = pi_tscore) %>% 
+  na.omit(usa_pi_tscore)
+
+data_germany_usa_pi <- bind_cols_fill(list(germany_pi, usa_pi))
+
+cohens_d("germany_pi_tscore", "usa_pi_tscore", 
+         data = data_germany_usa_pi)
+```
+
+##### UK - USA
+```{r}
+data_uk_usa_pi <- bind_cols_fill(list(uk_pi, usa_pi))
+
+cohens_d("uk_pi_tscore", "usa_pi_tscore", 
+         data = data_uk_usa_pi)
+```
+
+
+***
+
+#### LR
+
+```{r}
+lr_pi_country_age_sex <- lm("pi_tscore ~ country + age + sex", dataCompleteLatent)
+
+summary(lr_pi_country_age_sex)
+```
+
+#### QR
+
+```{r}
+qr_pi_country_age_sex <- rq("pi_tscore ~ country + age_50 + sex", 
+                            data = dataCompleteLatent)
+
+summary(qr_pi_country_age_sex)
+```
+
+
+#### Table
+
+```{r}
+quants <- .5
+
+qr_pi <- map(quants, ~rq("pi_tscore ~ country + age_50 + sex", 
+                         data = dataCompleteLatent, 
+                         tau = .x))
+
+lr_pi_country_age_sex <- lm("pi_tscore ~ country + age_50 + sex", 
+                            dataCompleteLatent)
+
+stargazer::stargazer(lr_pi_country_age_sex, 
+                     qr_pi, 
+                     rq.se = "boot",
+                     ci = TRUE,
+                     order = c(5,1,2,3,4),
+                     column.labels = c("OLS", paste("tau = ", quants)),
+                     covariate.labels = c("Intercept (USA)",
+                                          "Germany",
+                                          "UK",
+                                          "Age",
+                                          "Sex"),
+                     dep.var.labels = "PROMIS Pain Interference",
+                     #omit = c("Constant"),
+                     model.numbers = TRUE,
+                     model.names =  FALSE,
+                     #keep.stat = c('n'),
+                     type ='text',
+                     out = "tables/country_comparison_pi_table_intercept.html")
+```
+
+https://stats.stackexchange.com/qpistions/78022/cause-of-singularity-in-matrix-for-quantile-regression 
+
+<br>
+
+#### Plot
+
+```{r}
+#tidy(qr_pi[[2]], se = "boot")
+```
+
+
+```{r}
+qr_pi_tidy <- map(qr_pi, ~broom::tidy(.x, se = "boot",
+                                      conf.int = T)) %>%
+            bind_rows()
+
+ols_tidy <- tidy(lr_pi_country_age_sex)
+
+
+country_difference_pi_plot <- qr_pi_tidy %>%
+  ggplot(aes(x = tau,
+             y = estimate
+             )
+         ) + # the data we want to plot - in our case the tidied quantile regression output
+  geom_point(color = "#27408b", 
+             size = 3
+             ) + # plots the coefficient estimates
+  geom_line(color="#27408b", 
+            size = 1
+            ) + # adds a line connecting the coefficient estimates
+  geom_errorbar(aes(
+    ymin = conf.low,
+    ymax = conf.high
+      ), 
+    width = 0.05,
+    size  = 0.3,
+    position = position_dodge(.9)
+    ) + # adds the confidence intervals as error bars
+  geom_hline(data = ols_tidy, 
+             aes(yintercept = estimate), 
+             color = "red"
+             ) + # add OLS estimate - note it is from another data set which is totally OK
+  facet_wrap(~term, 
+             scales="free", 
+             ncol=2
+             ) + # one plot per explanatory variable, subplots over 2 columns
+  theme_minimal()
+
+country_difference_pi_plot
+```
+
+### PI - Without Intercept
+
+#### LR
+
+```{r}
+lr_pi_country_age_sex <- lm("pi_tscore ~ country + age + sex", dataCompleteLatent)
+
+summary(lr_pi_country_age_sex)
+```
+
+#### QR
+
+```{r}
+qr_pi_country_age_sex <- rq("pi_tscore ~ country + age_50 + sex - 1", 
+                            data = dataCompleteLatent)
+
+summary(qr_pi_country_age_sex)
+```
+
+
+#### Table
+
+```{r}
+quants <- .5
+
+qr_pi <- map(quants, ~rq("pi_tscore ~ country + age_50 + sex - 1", 
+                         data = dataCompleteLatent, 
+                         tau = .x))
+
+lr_pi_country_age_sex <- lm("pi_tscore ~ country + age_50 + sex - 1", 
+                            dataCompleteLatent)
+
+
+stargazer::stargazer(lr_pi_country_age_sex, 
+                     qr_pi, 
+                     rq.se = "boot",
+                     ci = TRUE,
+                     column.labels = c("OLS", paste("tau = ", quants)),
+                     covariate.labels = c("Germany",
+                                          "UK",
+                                          "USA",
+                                          "Age",
+                                          "Sex"),
+                     dep.var.labels = "PROMIS Pain Interference",
+                     omit = c("Constant"),
+                     model.numbers = TRUE,
+                     model.names =  FALSE,
+                     #keep.stat = c('n'),
+                     type ='text',
+                     out = "tables/country_comparison_pi_table.html")
+```
+
+https://stats.stackexchange.com/qpistions/78022/cause-of-singularity-in-matrix-for-quantile-regression 
+
+<br>
+
+#### Plot
+
+```{r}
+qr_pi_tidy <- map(qr_pi, ~broom::tidy(.x, se = "boot",
+                                      conf.int = T)) %>%
+            bind_rows()
+
+ols_tidy <- tidy(lr_pi_country_age_sex)
+
+
+country_difference_pi_plot <- qr_pi_tidy %>%
+  ggplot(aes(x = tau,
+             y = estimate
+             )
+         ) + # the data we want to plot - in our case the tidied quantile regression output
+  geom_point(color = "#27408b", 
+             size = 3
+             ) + # plots the coefficient estimates
+  geom_line(color="#27408b", 
+            size = 1
+            ) + # adds a line connecting the coefficient estimates
+  geom_errorbar(aes(
+    ymin = conf.low,
+    ymax = conf.high
+      ), 
+    width = 0.05,
+    size  = 0.3,
+    position = position_dodge(.9)
+    ) + # adds the confidence intervals as error bars
+  geom_hline(data = ols_tidy, 
+             aes(yintercept = estimate), 
+             color = "red"
+             ) + # add OLS estimate - note it is from another data set which is totally OK
+  facet_wrap(~term, 
+             scales="free", 
+             ncol=2
+             ) + # one plot per explanatory variable, subplots over 2 columns
+  theme_minimal()
+
+country_difference_pi_plot
+```
+
+
+```{r reproducibility_stuff}
+devtools::session_info() %>%
+    yaml::write_yaml("code reproducibility/sessioninfo_4.yaml")
+```

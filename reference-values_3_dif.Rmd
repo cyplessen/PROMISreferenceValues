@@ -1,0 +1,1520 @@
+---
+title: "Patient-Specific Reference Data for PROMIS PF, UE, & PI"
+subtitle: "3. DIF Analyses"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+knit: (function(inputFile, encoding) {
+      encoding = encoding, 
+      output_dir = "html") }) # print html in html folder
+      rmarkdown::render(inputFile, 
+output:
+  html_document:
+    code_folding: show
+    highlight: pygment
+    keep_md: no
+    theme: lumen
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+editor_options: 
+  chunk_output_type: console
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(plyr)
+library(tidyverse)
+library(haven)
+library(janitor)
+library(labelled)
+library(sjlabelled)
+library(sjPlot)
+library(summarytools)
+library(lordif)
+body(plot.lordif)[[9]] <- NULL #https://stackoverflow.com/questions/52904512/r-lordif-rmarkdown
+
+library(readxl)
+library(mirt)
+library(mirtCAT)
+library(mitools) # multiple imputation
+library(quantreg)
+library(mitml) # multiple imputation
+library(kableExtra)
+library(reshape)
+library(Amelia)
+library(qwraps2) # summary statistics
+library(kableExtra) # save html table
+library(flextable)
+library(officer)
+```
+
+# About
+
+This document outlines all necessary steps for DIF analyses used in the publication on patient-specific reference values of PROMIS Physical Functioning items in the USA, UK, and Germany.
+
+<br>
+
+# Overview
+
+The data used in this document was cleaned in `reference-values_1_cleaning.RMD`.
+
+```{r warning=FALSE}
+data_all_countries <- readRDS("data/tidy/dataComplete.rds")
+```
+
+<br>
+
+# Physical Functioning
+
+## DIF USA - Germany 
+
+Select data from Germany = 1 and US = 3.
+```{r}
+data_usa_ger <- data_all_countries %>% 
+  filter(country == "ger" | country == "usa")
+
+head(data_usa_ger)
+```
+
+
+```{r}
+summary(data_usa_ger)
+```
+
+Select only PFM items
+```{r}
+#items_usa_ger <- data_usa_ger %>% 
+#  dplyr::select(starts_with("PF"), -matches(c("sum", "theta", "se")))
+#  #dplyr::select_if(~ !any(is.na(.))) # remove items with missing values
+#
+#head(items_usa_ger)
+
+items_usa_ger <- data_usa_ger %>% 
+  dplyr::select("PFA1", 
+                "PFA3", 
+                "PFA5", 
+                "PFA11", 
+                "PFA12", 
+                "PFA51", 
+                "PFA56", 
+                "PFB24", 
+                "PFC12", 
+                "PFC36r1", 
+                "PFC37", 
+                "PFC45r1", 
+                "PFC46", 
+                "PFM26", 
+                "PFA14r1", 
+                "PFA29r1", 
+                "PFA34", 
+                "PFA36", 
+                "PFB13", 
+                "PFB26", 
+                "PFB28r1", 
+                "PFB34")
+```
+
+<br>
+
+Create language vector
+```{r}
+language_usa_ger <- dplyr::recode(data_usa_ger$country, 
+                        usa = "0", 
+                        ger = "1")
+head(language_usa_ger)
+```
+
+<br>
+
+### Nagelkerke Pseudo R^2^ 
+
+```{r results = FALSE}
+pf_dif_usa_ger <- lordif(as.data.frame(items_usa_ger), 
+                               language_usa_ger, 
+                               criterion = "R2",
+                               pseudo.R2 = "Nagelkerke",
+                               alpha = 0.05, 
+                               minCell = 5)
+```
+
+
+```{r results = FALSE}
+pf_dif_usa_ger
+
+summary(pf_dif_usa_ger)
+
+print(pf_dif_usa_ger)
+```
+
+<br>
+
+### Identified DIF items
+
+```{r}
+data_items_usa <- read_excel("data/raw/ao5_items.xlsx", sheet = 3) %>% 
+  select(id = variable, item, everything())
+
+head(data_items_usa)
+
+data_items_ger <- read_excel("data/raw/ao5_items.xlsx", sheet = 4) %>% 
+  dplyr::select(id = Item, 
+         item = Itemtext, 
+         everything())
+  
+head(data_items_ger)
+```
+
+Get item names with DIF
+```{r}
+dif_usa_ger_items <- items_usa_ger[pf_dif_usa_ger$flag] # only items no country 
+
+dif_usa_ger_items <- colnames(dif_usa_ger_items)
+dif_usa_ger_items
+```
+
+Get item id and item
+```{r}
+identified_dif_usa_ger_items <- data_items_usa %>% 
+  select(id, item) %>% 
+  filter(id %in% dif_usa_ger_items)
+
+identified_dif_ger_usa_items <- data_items_ger %>% 
+    select(id, item) %>% 
+  filter(id %in% dif_usa_ger_items)
+```
+
+
+```{r}
+dif_items_usa_ger <- rbind(identified_dif_usa_ger_items, 
+                           identified_dif_ger_usa_items) %>% 
+  arrange(id) %>% 
+  select(id, item)
+
+dif_items_usa_ger
+```
+
+
+<br>
+
+### Print output
+```{r}
+print(pf_dif_usa_ger)
+```
+
+<br>
+
+### Print extended output
+```{r}
+summary(pf_dif_usa_ger)
+```
+
+### Differences between estimated thetas
+
+```{r}
+pf_dif_usa_ger_parameters_overall <-  pf_dif_usa_ger$calib[1]
+pf_dif_usa_ger_parameters_group_specific <- pf_dif_usa_ger$calib.sparse[1]
+
+pf_dif_usa_ger_differences <- mapply('-', pf_dif_usa_ger_parameters_overall, pf_dif_usa_ger_parameters_group_specific, SIMPLIFY = FALSE) %>% unlist()
+
+pf_dif_usa_ger_t_score_dif_free_difference_min <- min(pf_dif_usa_ger_differences) * 10
+pf_dif_usa_ger_t_score_dif_free_difference_max <- max(pf_dif_usa_ger_differences) * 10
+pf_dif_usa_ger_t_score_dif_free_difference_min
+pf_dif_usa_ger_t_score_dif_free_difference_max
+```
+
+
+<br>
+
+### Plot
+
+#### Figure 1
+
+```{r fig.keep=1}
+plot_pf_us_ger <- plot.lordif(pf_dif_usa_ger, 
+            labels = c("USA","Germany"),
+            height = 12,
+            width = 5,
+            cex = 2,
+            lwd = 1)
+plot_pf_us_ger
+
+ plot.lordif(pf_dif_usa_ger, 
+            labels = c("USA","Germany"),
+            height = 12,
+            width = 5,
+            cex = 2,
+            lwd = 1)
+```
+
+Figure 1: Trait distributions – USA vs Germany. Note: This graph shows smoothed histograms of the PF levels of German (dashed line) and American (solid line) study participants as measured by the PROMIS PF scale (theta). There is broad overlap in the distributions, though American individuals in general demonstrated lower levels of PF than German individuals.
+
+
+<br>
+
+#### Figure 2
+
+```{r echo = FALSE, fig.keep=2}
+plot.lordif(pf_dif_usa_ger, 
+            labels = c("USA","Germany"),
+            height = 12,
+            width = 5,
+            cex = 2,
+            lwd = 1)
+```
+
+PFA34	Are you able to wash your back?
+
+Figure 2: Graphical display of the item “Are you able to wash your back?” which shows uniform DIF with respect to language. The upper–left graph shows the item characteristic curves (ICCs) for the item for German (dashed curve) vs. American (solid curve). The upper–right graph shows the absolute difference between the ICCs for the two groups, indicating that the difference is mainly at low to average levels of anxiety (theta). The lower–left graph shows the item response functions for the two groups based on the demographic–specific item parameter estimates (slope and category threshold values by group), which are also printed on the graph. The lower–right graph shows the absolute difference between the ICCs (the upper–right graph) weighted by the score distribution for the focal group, i.e., German individuals (dashed curve in Figure 1), indicating minimal impact.
+
+<br>
+
+#### Figure 3
+
+```{r echo = FALSE, fig.keep=3}
+plot.lordif(pf_dif_usa_ger, 
+            labels = c("USA","Germany"),
+            height = 30,
+            width = 9,
+            cex = 0.5,
+            lwd = 2)
+```
+
+Figure 3: Graphical display of the item “Are you able to make sharp turns while running fast?” which shows uniform DIF with respect to language. The upper–left graph shows the item characteristic curves (ICCs) for the item for German (dashed curve) vs. American (solid curve). The upper–right graph shows the absolute difference between the ICCs for the two groups, indicating that the difference is mainly at low to average levels of anxiety (theta). The lower–left graph shows the item response functions for the two groups based on the demographic–specific item parameter estimates (slope and category threshold values by group), which are also printed on the graph. The lower–right graph shows the absolute difference between the ICCs (the upper–right graph) weighted by the score distribution for the focal group, i.e., German individuals (dashed curve in Figure 1), indicating minimal impact.
+<br>
+
+#### Figure 4
+
+```{r echo = FALSE, fig.keep=4}
+plot.lordif(pf_dif_usa_ger, 
+            labels = c("USA","Germany"),
+            height = 12,
+            width = 5,
+            cex = 2,
+            lwd = 1)
+```
+
+Figure 4: Impact of DIF items on test characteristic curves. Note: These graphs show test characteristic curves (TCCs) for US and German individuals using demographic–specific item parameter estimates. TCCs show the expected total scores for groups of items at each PF level (theta). The graph on the left shows these curves for all of the items (both items with and without DIF), while the graph on the right shows these curves for the subset of these items found to have DIF. These curves suggest that at the overall test level there is minimal difference in the total expected score at any PF level for US or German individuals.
+
+<br>
+
+#### Figure 5
+
+```{r echo = FALSE, fig.keep=5}
+plot.lordif(pf_dif_usa_ger, 
+            labels = c("USA","Germany"),
+            height = 12,
+            width = 5,
+            cex = 2,
+            lwd = 1)
+```
+
+Figure 5: Individual–level DIF impact. Note: These graphs show the difference in score between using scores that ignore DIF and those that account for DIF. The graph on the left shows a box plot of these differences. The interquartile range, representing the middle 50% of the differences (bound between the bottom and top of the shaded box), range roughly from +0.03 to +0.12 with a median of approximately +0.10. In the graph on the right the same difference scores are plotted against the initial scores ignoring DIF (“initial theta”), separately for US and German individuals. Guidelines are placed at 0.0 (solid line), i.e., no difference, and the mean of the differences (dotted line). The positive values to the left of this graph indicate that in almost all cases, accounting for DIF led to slightly lower scores (i.e., naive score ignoring DIF minus score accounting for DIF > 0, so accounting for DIF score is less than the naive score) for those with lower levels of anxiety, but this appears to be consistent across US and German individuals. The negative values to the right of this graph indicate that for those with higher levels of PF, accounting for DIF led to slightly higher scores, but this again was consistent across older and younger individuals.
+
+<br>
+
+## DIF USA - UK
+
+Select data from UK = 2 and US = 3.
+```{r}
+data_usa_uk <- data_all_countries %>% 
+  filter(country == "uk" | country == "usa")
+
+head(data_usa_uk)
+```
+
+
+```{r}
+summary(data_usa_uk)
+```
+
+Select only PFM items
+```{r}
+items_usa_uk <- data_usa_uk %>% 
+  dplyr::select(starts_with("PF"), -matches(c("sum", "theta", "se")))
+  #dplyr::select_if(~ !any(is.na(.))) # remove items with missing values
+
+head(items_usa_uk)
+```
+
+<br>
+
+Create language vector
+```{r}
+language_usa_uk <- dplyr::recode(data_usa_uk$country, 
+                        usa = "0", 
+                        uk = "1")
+head(language_usa_uk)
+```
+
+<br>
+
+### Nagelkerke Pseudo R^2^ 
+
+```{r results = FALSE}
+pf_dif_usa_uk <- lordif(as.data.frame(items_usa_uk), 
+                               language_usa_uk, 
+                               criterion = "R2",
+                               pseudo.R2 = "Nagelkerke",
+                               alpha = 0.05, 
+                               minCell = 5)
+```
+
+
+```{r results = FALSE}
+pf_dif_usa_uk
+
+summary(pf_dif_usa_uk)
+```
+
+<br>
+
+### Identified DIF items
+
+```{r}
+data_items_usa <- read_excel("data/raw/ao5_items.xlsx", sheet = 3) %>% 
+  select(id = variable, item, everything())
+
+head(data_items_usa)
+data_items_uk <- read_excel("data/raw/ao5_items.xlsx", sheet = 4) %>% 
+  dplyr::select(id = Item, 
+         item = Itemtext, 
+         everything())
+  
+head(data_items_uk)
+```
+
+Get item names with DIF
+```{r}
+dif_usa_uk_items <- items_usa_uk[pf_dif_usa_uk$flag] # only items no country 
+
+dif_usa_uk_items <- colnames(dif_usa_uk_items)
+dif_usa_uk_items
+```
+
+Get item id and item
+```{r}
+identified_dif_usa_uk_items <- data_items_usa %>% 
+  select(id, item) %>% 
+  filter(id %in% dif_usa_uk_items)
+
+identified_dif_uk_usa_items <- data_items_uk %>% 
+    select(id, item) %>% 
+  filter(id %in% dif_usa_uk_items)
+```
+
+
+```{r}
+dif_items_usa_uk <- rbind(identified_dif_usa_uk_items, 
+                           identified_dif_uk_usa_items) %>% 
+  arrange(id) %>% 
+  select(id, item)
+
+dif_items_usa_uk
+```
+
+
+<br>
+
+### Print output
+```{r}
+print(pf_dif_usa_uk)
+```
+
+<br>
+
+### Print extended output
+```{r}
+summary(pf_dif_usa_uk)
+```
+
+<br>
+
+### Differences between estimated thetas
+
+```{r}
+pf_dif_usa_uk_parameters_overall <-  pf_dif_usa_uk$calib[1]
+pf_dif_usa_uk_parameters_group_specific <- pf_dif_usa_uk$calib.sparse[1]
+
+pf_dif_usa_uk_differences <- mapply('-', pf_dif_usa_uk_parameters_overall, pf_dif_usa_uk_parameters_group_specific, SIMPLIFY = FALSE) %>% unlist()
+
+pf_dif_usa_uk_t_score_dif_free_difference_min <- min(pf_dif_usa_uk_differences) * 10
+pf_dif_usa_uk_t_score_dif_free_difference_min
+pf_dif_usa_uk_t_score_dif_free_difference_max <- max(pf_dif_usa_uk_differences) * 10
+pf_dif_usa_uk_t_score_dif_free_difference_max
+```
+
+### Plot
+
+#### Figure 1
+
+```{r echo = FALSE, fig.keep=1}
+plot.lordif(pf_dif_usa_uk, 
+            labels = c("USA","UK"),
+            height = 12,
+            width = 5,
+            cex = 2,
+            lwd = 1)
+```
+
+<br>
+
+#### Figure 2
+
+```{r echo = FALSE, fig.keep=2}
+plot.lordif(pf_dif_usa_uk, 
+            labels = c("USA","UK"),
+            height = 12,
+            width = 5,
+            cex = 2,
+            lwd = 1)
+```
+
+<br>
+
+#### Figure 3
+
+```{r echo = FALSE, fig.keep=3}
+plot.lordif(pf_dif_usa_uk, 
+            labels = c("USA","UK"),
+            height = 12,
+            width = 5,
+            cex = 2,
+            lwd = 1)
+```
+
+<br>
+
+#### Figure 4
+
+```{r echo = FALSE, fig.keep=4}
+plot.lordif(pf_dif_usa_uk, 
+            labels = c("USA","UK"),
+            height = 12,
+            width = 5,
+            cex = 2,
+            lwd = 1)
+```
+
+<br>
+
+#### Figure 5
+
+```{r echo = FALSE, fig.keep=5}
+plot.lordif(pf_dif_usa_uk, 
+            labels = c("USA","UK"),
+            height = 12,
+            width = 5,
+            cex = 2,
+            lwd = 1)
+```
+
+<br>
+
+## DIF Summary
+
+### Item content
+
+```{r}
+usa_ger <- dif_items_usa_ger %>%
+  mutate(comparision = "USA-GER")  
+
+usa_uk <- dif_items_usa_uk %>%
+  mutate(comparision = "USA-UK")
+
+item_content_table <- rbind(usa_ger, usa_uk) %>% 
+  arrange(id) %>% 
+  kbl %>% 
+  kable_styling() 
+
+item_content_table
+```
+
+<br>
+
+### DIF Type
+
+### Mean Theta Differences: Corrected
+```{r}
+dif_usa_ger <- pf_dif_usa_ger
+theta_difference_usa_ger <- data.frame(dif_usa_ger$group, dif_usa_ger$calib$theta, dif_usa_ger$calib$SE, dif_usa_ger$calib.sparse$theta, dif_usa_ger$calib.sparse$SE) 
+
+theta_difference_usa_ger_table <- theta_difference_usa_ger %>% 
+  group_by(dif_usa_ger.group) %>% 
+  summarise(mean_theta = mean(dif_usa_ger.calib.theta),
+            mean_theta_corr = mean(dif_usa_ger.calib.sparse.theta),
+            mean_SE = mean(dif_usa_ger.calib.SE),
+            mean_SE_corr = mean(dif_usa_ger.calib.sparse.SE))
+theta_difference_usa_ger_table
+
+t_test_usa_ger <- t.test(dif_usa_ger$calib.sparse$theta~theta_difference_usa_ger$dif_usa_ger.group)
+
+mean_difference_usa_ger <- t_test_usa_ger$estimate[1] - t_test_usa_ger$estimate[2]
+mean_difference_usa_ger
+```
+
+<br>
+
+#### Uncorrected
+
+```{r}
+t_test_usa_ger_raw <- t.test(dif_usa_ger$calib$theta~theta_difference_usa_ger$dif_usa_ger.group)
+
+mean_difference_usa_ger_raw <- t_test_usa_ger_raw$estimate[1] - t_test_usa_ger_raw$estimate[2]
+mean_difference_usa_ger_raw
+```
+
+
+```{r}
+dif_usa_ger_results <- dif_usa_ger$stats %>% 
+    filter(pseudo12.Nagelkerke > 0.02 | pseudo13.Nagelkerke > 0.02  | pseudo23.Nagelkerke > 0.02 ) %>% 
+  mutate(comparison = "USA-GER",
+         promis_item = colnames(items_usa_ger[item])) %>% 
+  select(comparison, item, promis_item, 
+         uniform_pseudo12.Nagelkerke = pseudo12.Nagelkerke, 
+         overall_pseudo13.Nagelkerke = pseudo13.Nagelkerke, 
+         non_uniform_pseudo23.Nagelkerke = pseudo23.Nagelkerke) 
+```
+
+```{r}
+dif_usa_ger_results <- mutate(dif_usa_ger_results, 
+                              type = case_when(uniform_pseudo12.Nagelkerke >  0.02 ~ "uniform", 
+                                               non_uniform_pseudo23.Nagelkerke >  0.02 ~ "non-uniform", 
+                                               TRUE ~ "overall"))
+
+dif_usa_ger_results
+```
+
+### Mean Theta Differences: Corrected
+```{r}
+dif_usa_uk <- pf_dif_usa_uk
+
+theta_difference_usa_uk <- data.frame(dif_usa_uk$group, dif_usa_uk$calib$theta, dif_usa_uk$calib$SE, dif_usa_uk$calib.sparse$theta, dif_usa_uk$calib.sparse$SE) 
+
+theta_difference_usa_uk_table <- theta_difference_usa_uk %>% 
+  group_by(dif_usa_uk.group) %>% 
+  summarise(mean_theta = mean(dif_usa_uk.calib.theta),
+            mean_theta_corr = mean(dif_usa_uk.calib.sparse.theta),
+            mean_SE = mean(dif_usa_uk.calib.SE),
+            mean_SE_corr = mean(dif_usa_uk.calib.sparse.SE))
+theta_difference_usa_uk_table
+
+t_test_usa_uk <- t.test(dif_usa_uk$calib.sparse$theta~theta_difference_usa_uk$dif_usa_uk.group)
+
+mean_difference_usa_uk <- t_test_usa_uk$estimate[1] - t_test_usa_uk$estimate[2]
+mean_difference_usa_uk
+```
+
+<br>
+
+#### Uncorrected
+
+```{r}
+t_test_usa_uk_raw <- t.test(dif_usa_uk$calib$theta~theta_difference_usa_uk$dif_usa_uk.group)
+
+mean_difference_usa_uk_raw <- t_test_usa_uk_raw$estimate[1] - t_test_usa_uk_raw$estimate[2]
+mean_difference_usa_uk_raw
+```
+
+
+```{r}
+dif_usa_uk_results <- dif_usa_uk$stats %>% 
+    filter(pseudo12.Nagelkerke > 0.02 | pseudo13.Nagelkerke > 0.02  | pseudo23.Nagelkerke > 0.02 ) %>% 
+  mutate(comparison = "USA-UK",
+         promis_item = colnames(items_usa_uk[item])) %>% 
+  select(comparison, item, promis_item, 
+         uniform_pseudo12.Nagelkerke = pseudo12.Nagelkerke, 
+         overall_pseudo13.Nagelkerke = pseudo13.Nagelkerke, 
+         non_uniform_pseudo23.Nagelkerke = pseudo23.Nagelkerke) 
+```
+
+```{r}
+dif_usa_uk_results <- mutate(dif_usa_uk_results, 
+                              type = case_when(uniform_pseudo12.Nagelkerke >  0.02 ~ "uniform", 
+                                               non_uniform_pseudo23.Nagelkerke >  0.02 ~ "non-uniform", 
+                                               TRUE ~ "overall"))
+
+dif_usa_uk_results
+```
+
+<br>
+
+## Summary DIF PF
+
+```{r}
+pf_dif_type_table <- rbind(dif_usa_ger_results, dif_usa_uk_results) %>% 
+ arrange(id = promis_item) %>% 
+  mutate(domain = "Physical Functioning") %>% 
+ select(domain, 
+        id = promis_item,
+        Nagelkerke_12 = uniform_pseudo12.Nagelkerke,
+        Nagelkerke_13 = overall_pseudo13.Nagelkerke,
+        Nagelkerke_23 = non_uniform_pseudo23.Nagelkerke,
+        everything(), -item)   %>% 
+ kbl %>% 
+ kable_styling()
+
+pf_dif_type_table
+```
+
+<br>
+
+# Upper Extremities
+
+## DIF USA - Germany 
+
+Select data from Germany = 1 and US = 3.
+```{r}
+data_usa_ger <- data_all_countries %>% 
+  filter(country == "ger" | country == "usa")
+```
+
+Select only ue items
+```{r}
+ue_items_usa_ger <- data_usa_ger %>% 
+  dplyr::select(
+    "PFA14r1",
+    "PFA29r1",
+    "PFA34",
+    "PFA36",
+    "PFB13",
+    "PFB26",
+    "PFB28r1",
+    "PFB34"
+  )
+```
+
+<br>
+
+Create language vector
+```{r}
+language_usa_ger <- dplyr::recode(data_usa_ger$country, 
+                        usa = "0", 
+                        ger = "1")
+```
+
+<br>
+
+### Nagelkerke Pseudo R^2^ 
+
+```{r results = FALSE}
+ue_pf_dif_usa_ger <- lordif(as.data.frame(ue_items_usa_ger), 
+                               language_usa_ger, 
+                               criterion = "R2",
+                               pseudo.R2 = "Nagelkerke",
+                               alpha = 0.05, 
+                               minCell = 5)
+```
+
+
+```{r results = FALSE}
+ue_pf_dif_usa_ger
+
+summary(ue_pf_dif_usa_ger)
+```
+
+
+### Identified DIF items
+
+```{r}
+data_items_usa <- read_excel("data/raw/ao5_items.xlsx", sheet = 3) %>% 
+  select(id = variable, item, everything())
+
+head(data_items_usa)
+data_items_ger <- read_excel("data/raw/ao5_items.xlsx", sheet = 4) %>% 
+  dplyr::select(id = Item, 
+         item = Itemtext, 
+         everything())
+  
+head(data_items_ger)
+```
+
+Get item names with DIF
+```{r}
+ue_dif_usa_ger_items <- ue_items_usa_ger[ue_pf_dif_usa_ger$flag] # only items no country 
+
+ue_dif_usa_ger_items <- colnames(ue_dif_usa_ger_items)
+ue_dif_usa_ger_items
+```
+
+Get item id and item
+```{r}
+identified_dif_ue_usa_ger_items <- data_items_usa %>% 
+  select(id, item) %>% 
+  filter(id %in% ue_dif_usa_ger_items)
+
+identified_dif_ue_ger_usa_items <- data_items_ger %>% 
+    select(id, item) %>% 
+  filter(id %in% ue_dif_usa_ger_items)
+```
+
+
+```{r}
+dif_ue_items_usa_ger <- rbind(identified_dif_ue_usa_ger_items, 
+                           identified_dif_ue_ger_usa_items) %>% 
+  arrange(id) %>% 
+  select(id, item)
+
+dif_ue_items_usa_ger
+```
+
+### Differences between estimated thetas
+
+```{r}
+ue_pf_dif_usa_ger_parameters_overall <-  ue_pf_dif_usa_ger$calib[1]
+ue_pf_dif_usa_ger_parameters_group_specific <- ue_pf_dif_usa_ger$calib.sparse[1]
+
+ue_pf_dif_usa_ger_differences <- mapply('-', ue_pf_dif_usa_ger_parameters_overall, ue_pf_dif_usa_ger_parameters_group_specific, SIMPLIFY = FALSE) %>% unlist()
+
+ue_pf_dif_usa_ger_t_score_dif_free_difference_min <- min(ue_pf_dif_usa_ger_differences) * 10
+ue_pf_dif_usa_ger_t_score_dif_free_difference_min
+ue_pf_dif_usa_ger_t_score_dif_free_difference_max <- max(ue_pf_dif_usa_ger_differences) * 10
+ue_pf_dif_usa_ger_t_score_dif_free_difference_max
+```
+
+<br>
+
+### Plot
+
+#### Figure 1
+
+```{r fig.keep=1}
+plot.lordif(ue_pf_dif_usa_ger, 
+            labels = c("USA","Germany"),
+            height = 12,
+            width = 5,
+            cex = 2,
+            lwd = 1)
+```
+
+Figure 1: Trait distributions – USA vs Germany. Note: This graph shows smoothed histograms of the PF levels of German (dashed line) and American (solid line) study participants as measured by the PROMIS PF scale (theta). There is broad overlap in the distributions, though American individuals in general demonstrated lower levels of PF than German individuals.
+
+
+<br>
+
+#### Figure 2
+
+```{r echo = FALSE, fig.keep=2}
+plot.lordif(ue_pf_dif_usa_ger, 
+            labels = c("USA","Germany"),
+            height = 12,
+            width = 5,
+            cex = 2,
+            lwd = 1)
+```
+
+PFA34	Are you able to wash your back?
+
+Figure 2: Graphical display of the item “Are you able to wash your back?” which shows uniform DIF with respect to language. The upper–left graph shows the item characteristic curves (ICCs) for the item for German (dashed curve) vs. American (solid curve). The upper–right graph shows the absolute difference between the ICCs for the two groups, indicating that the difference is mainly at low to average levels of anxiety (theta). The lower–left graph shows the item response functions for the two groups based on the demographic–specific item parameter estimates (slope and category threshold values by group), which are also printed on the graph. The lower–right graph shows the absolute difference between the ICCs (the upper–right graph) weighted by the score distribution for the focal group, i.e., German individuals (dashed curve in Figure 1), indicating minimal impact.
+
+<br>
+
+#### Figure 3
+
+```{r echo = FALSE, fig.keep=4}
+plot.lordif(pf_dif_usa_ger, 
+            labels = c("USA","Germany"),
+            height = 12,
+            width = 5,
+            cex = 2,
+            lwd = 1)
+```
+
+Figure 4: Impact of DIF items on test characteristic curves. Note: These graphs show test characteristic curves (TCCs) for US and German individuals using demographic–specific item parameter estimates. TCCs show the expected total scores for groups of items at each PF level (theta). The graph on the left shows these curves for all of the items (both items with and without DIF), while the graph on the right shows these curves for the subset of these items found to have DIF. These curves suggest that at the overall test level there is minimal difference in the total expected score at any PF level for US or German individuals.
+
+<br>
+
+#### Figure 4
+
+```{r echo = FALSE, fig.keep=5}
+plot.lordif(pf_dif_usa_ger, 
+            labels = c("USA","Germany"),
+            height = 12,
+            width = 5,
+            cex = 2,
+            lwd = 1)
+```
+
+Figure 5: Individual–level DIF impact. Note: These graphs show the difference in score between using scores that ignore DIF and those that account for DIF. The graph on the left shows a box plot of these differences. The interquartile range, representing the middle 50% of the differences (bound between the bottom and top of the shaded box), range roughly from +0.03 to +0.12 with a median of approximately +0.10. In the graph on the right the same difference scores are plotted against the initial scores ignoring DIF (“initial theta”), separately for US and German individuals. Guidelines are placed at 0.0 (solid line), i.e., no difference, and the mean of the differences (dotted line). The positive values to the left of this graph indicate that in almost all cases, accounting for DIF led to slightly lower scores (i.e., naive score ignoring DIF minus score accounting for DIF > 0, so accounting for DIF score is less than the naive score) for those with lower levels of anxiety, but this appears to be consistent across US and German individuals. The negative values to the right of this graph indicate that for those with higher levels of PF, accounting for DIF led to slightly higher scores, but this again was consistent across older and younger individuals.
+<br>
+
+## DIF USA - UK
+
+Select data from UK = 2 and US = 3.
+```{r}
+data_usa_uk <- data_all_countries %>% 
+  filter(country == "uk" | country == "usa")
+```
+
+
+Select only PFM items
+```{r}
+ue_items_usa_uk <- data_usa_uk %>% 
+  dplyr::select(
+    "PFA14r1",
+    "PFA29r1",
+    "PFA34",
+    "PFA36",
+    "PFB13",
+    "PFB26",
+    "PFB28r1",
+    "PFB34"
+  )
+
+```
+
+<br>
+
+Create language vector
+```{r}
+language_usa_uk <- dplyr::recode(data_usa_uk$country, 
+                        usa = "0", 
+                        uk = "1")
+```
+
+<br>
+
+### Nagelkerke Pseudo R^2^ 
+
+```{r results = FALSE}
+ue_pf_dif_usa_uk <- lordif(as.data.frame(ue_items_usa_uk), 
+                                    language_usa_uk, 
+                                    criterion = "R2",
+                                    pseudo.R2 = "Nagelkerke",
+                                    alpha = 0.05, 
+                                    minCell = 5)
+```
+
+
+<br>
+
+## UE DIF Summary
+
+### Item content
+```{r}
+ue_usa_ger <- dif_ue_items_usa_ger %>%
+  mutate(comparision = "USA-GER")  
+
+ue_item_content_table <- ue_usa_ger %>% 
+  arrange(id) %>% 
+  kbl %>% 
+  kable_styling() 
+
+ue_item_content_table
+```
+
+<br>
+
+### DIF Type
+
+### Mean Theta Differences: Corrected
+```{r}
+ue_dif_usa_ger <- ue_pf_dif_usa_ger
+ue_theta_difference_usa_ger <- data.frame(ue_dif_usa_ger$group, 
+                                          ue_dif_usa_ger$calib$theta, 
+                                          ue_dif_usa_ger$calib$SE, 
+                                          ue_dif_usa_ger$calib.sparse$theta, 
+                                          ue_dif_usa_ger$calib.sparse$SE) 
+
+ue_theta_difference_usa_ger_table <- ue_theta_difference_usa_ger %>% 
+  group_by(ue_dif_usa_ger.group) %>% 
+  summarise(mean_theta = mean(ue_dif_usa_ger.calib.theta),
+            mean_theta_corr = mean(ue_dif_usa_ger.calib.sparse.theta),
+            mean_SE = mean(ue_dif_usa_ger.calib.SE),
+            mean_SE_corr = mean(ue_dif_usa_ger.calib.sparse.SE))
+
+ue_theta_difference_usa_ger_table
+
+ue_t_test_usa_ger <- t.test(ue_dif_usa_ger$calib.sparse$theta~ue_theta_difference_usa_ger$ue_dif_usa_ger.group)
+
+ue_mean_difference_usa_ger <- ue_t_test_usa_ger$estimate[1] - ue_t_test_usa_ger$estimate[2]
+ue_mean_difference_usa_ger
+```
+
+<br>
+
+#### Uncorrected
+
+```{r}
+ue_t_test_usa_ger_raw <- t.test(ue_dif_usa_ger$calib$theta~ue_theta_difference_usa_ger$ue_dif_usa_ger.group)
+
+ue_mean_difference_usa_ger_raw <- ue_t_test_usa_ger_raw$estimate[1] - ue_t_test_usa_ger_raw$estimate[2]
+ue_mean_difference_usa_ger_raw
+```
+
+
+```{r}
+ue_dif_usa_ger_results <- ue_dif_usa_ger$stats %>% 
+    dplyr::filter(pseudo12.Nagelkerke > 0.02 | pseudo13.Nagelkerke > 0.02  | pseudo23.Nagelkerke > 0.02 ) %>% 
+  mutate(comparison = "USA-GER",
+         promis_item = colnames(ue_items_usa_ger[item])) %>% 
+  select(comparison, item, promis_item, 
+         uniform_pseudo12.Nagelkerke = pseudo12.Nagelkerke, 
+         overall_pseudo13.Nagelkerke = pseudo13.Nagelkerke, 
+         non_uniform_pseudo23.Nagelkerke = pseudo23.Nagelkerke) 
+```
+
+```{r}
+ue_dif_usa_ger_results <- mutate(ue_dif_usa_ger_results, 
+                              type = case_when(uniform_pseudo12.Nagelkerke >  0.02 ~ "uniform", 
+                                               non_uniform_pseudo23.Nagelkerke >  0.02 ~ "non-uniform", 
+                                               TRUE ~ "overall"),
+                              Dimension = "UE") %>% 
+  select(Dimension, everything(), -item)
+
+ue_dif_usa_ger_results
+```
+
+
+# Pain Interference
+
+## DIF USA - Germany 
+
+Select data from Germany = 1 and US = 3.
+```{r}
+data_usa_ger <- data_all_countries %>% 
+  filter(country == "ger" | country == "usa")
+```
+
+Select only pi items
+```{r}
+pi_items_usa_ger <- data_usa_ger %>% 
+  dplyr::select("PAININ3",
+                "PAININ9",
+                "PAININ12",
+                "PAININ13",
+                "PAININ22",
+                "PAININ31",
+                "PAININ34",
+                "PAININ36")
+```
+
+<br>
+
+### Nagelkerke Pseudo R^2^ 
+
+```{r results = FALSE}
+pi_pf_dif_usa_ger <- lordif(as.data.frame(pi_items_usa_ger), 
+                               language_usa_ger, 
+                               criterion = "R2",
+                               pseudo.R2 = "Nagelkerke",
+                               alpha = 0.05, 
+                               minCell = 5)
+```
+
+
+```{r results = FALSE}
+pi_pf_dif_usa_ger
+
+summary(pi_pf_dif_usa_ger)
+```
+
+<br>
+
+## DIF USA - UK
+
+
+Select only PFM items
+```{r}
+pi_items_usa_uk <- data_usa_uk %>% 
+  dplyr::select("PAININ3",
+                "PAININ9",
+                "PAININ12",
+                "PAININ13",
+                "PAININ22",
+                "PAININ31",
+                "PAININ34",
+                "PAININ36")
+```
+
+<br>
+
+### Nagelkerke Pseudo R^2^ 
+
+```{r results = FALSE}
+pi_pf_dif_usa_uk <- lordif(as.data.frame(pi_items_usa_uk), 
+                               language_usa_uk, 
+                               criterion = "R2",
+                               pseudo.R2 = "Nagelkerke",
+                               alpha = 0.05, 
+                               minCell = 5)
+```
+
+<br>
+
+# Saving DIF Summary Table
+
+```{r}
+pf_dif_type_table <- rbind(dif_usa_ger_results, dif_usa_uk_results) %>% 
+  arrange(id = promis_item) %>% 
+  mutate(Dimension = "PF")  
+
+dif_summary_table <- bind_rows(ue_dif_usa_ger_results, pf_dif_type_table) %>% 
+  select(Dimension, 
+         "PROMIS Item" = promis_item,
+         "Nagelkerke~12~" = uniform_pseudo12.Nagelkerke,
+         "Nagelkerke~13~" = overall_pseudo13.Nagelkerke,
+         "Nagelkerke~23~" = non_uniform_pseudo23.Nagelkerke,
+         Comparison = comparison,
+         "DIF Type" = type,
+         everything(), -item) %>% 
+    flextable() %>% 
+  theme_booktabs() %>% 
+  italic(italic = TRUE, part = "header") %>% 
+  autofit()  %>% 
+  add_header_lines(values = c("Summary of Flagged DIF Items", "Table S1")) %>% 
+    add_footer_lines(values = "Notes. ") %>% 
+  italic(italic = TRUE, part = "header")
+
+# Export to word
+doc_dif <- read_docx()
+doc_dif <- body_add_flextable(doc_dif, value = dif_summary_table)
+print(doc_dif, target = "tables/table_dif_summary.docx")
+```
+
+
+```{r}
+dif_summary_table
+```
+
+<br>
+
+# Sex DIF
+
+## Setup
+```{r}
+sex_vector <- data_all_countries$sex
+
+pf_items_all_countries <- data_all_countries %>% 
+  dplyr::select("PFA1", 
+                "PFA3", 
+                "PFA5", 
+                "PFA11", 
+                "PFA12", 
+                "PFA51", 
+                "PFA56", 
+                "PFB24", 
+                "PFC12", 
+                "PFC36r1", 
+                "PFC37", 
+                "PFC45r1", 
+                "PFC46", 
+                "PFM26", 
+                "PFA14r1", 
+                "PFA29r1", 
+                "PFA34", 
+                "PFA36", 
+                "PFB13", 
+                "PFB26", 
+                "PFB28r1", 
+                "PFB34")
+
+ue_items_all_countries <- data_all_countries %>% 
+  dplyr::select(
+    "PFA14r1",
+    "PFA29r1",
+    "PFA34",
+    "PFA36",
+    "PFB13",
+    "PFB26",
+    "PFB28r1",
+    "PFB34"
+  )
+
+pi_items_all_countries <- data_all_countries %>% 
+  dplyr::select("PAININ3",
+                "PAININ9",
+                "PAININ12",
+                "PAININ13",
+                "PAININ22",
+                "PAININ31",
+                "PAININ34",
+                "PAININ36")
+```
+
+## PF
+
+<br>
+
+### Nagelkerke Pseudo R^2^ 
+
+```{r results = FALSE}
+pf_dif_sex <- lordif(as.data.frame(pf_items_all_countries), 
+                               sex_vector, 
+                               criterion = "R2",
+                               pseudo.R2 = "Nagelkerke",
+                               alpha = 0.05, 
+                               minCell = 5)
+```
+
+<br>
+
+### Identified DIF items
+
+```{r}
+data_items_english <- read_excel("data/raw/ao5_items.xlsx", sheet = 3) %>% 
+  select(id = variable, item, everything())
+
+data_items_german <- read_excel("data/raw/ao5_items.xlsx", sheet = 4) %>% 
+  dplyr::select(id = Item, 
+         item = Itemtext, 
+         everything())
+
+pf_dif_sex_items <- pf_items_all_countries[pf_dif_sex$flag] %>% 
+  colnames()
+
+pf_identified_dif_sex_usa_items <- data_items_english %>% 
+  select(id, item) %>% 
+  filter(id %in% pf_dif_sex_items)
+
+pf_identified_dif_sex_ger_items <- data_items_german %>% 
+    select(id, item) %>% 
+  filter(id %in% pf_dif_sex_items)
+
+pf_dif_items_engl_ger_sex <- rbind(pf_identified_dif_sex_usa_items, 
+                           pf_identified_dif_sex_ger_items) %>% 
+  arrange(id) %>% 
+  select(id, item)
+
+pf_dif_items_engl_ger_sex
+```
+
+
+<br>
+
+
+### Differences between estimated thetas
+
+```{r}
+pf_dif_sex_parameters_overall <-  pf_dif_sex$calib[1]
+pf_dif_sex_parameters_group_specific <- pf_dif_sex$calib.sparse[1]
+
+pf_dif_sex_differences <- mapply('-', 
+                                 pf_dif_sex_parameters_overall, 
+                                 pf_dif_sex_parameters_group_specific, 
+                                 SIMPLIFY = FALSE) %>% 
+  unlist()
+
+pf_dif_sex_t_score_dif_free_difference_min <- min(pf_dif_sex_differences) * 10
+pf_dif_sex_t_score_dif_free_difference_max <- max(pf_dif_sex_differences) * 10
+pf_dif_sex_t_score_dif_free_difference_min
+pf_dif_sex_t_score_dif_free_difference_max
+```
+
+
+<br>
+
+### Plot
+
+#### Figure 1
+
+```{r fig.keep=1}
+plot_pf_sex <- plot.lordif(pf_dif_sex, 
+            labels = c("Male","Female"),
+            height = 12,
+            width = 5,
+            cex = 2,
+            lwd = 1)
+plot_pf_sex
+```
+
+Figure 1: Trait distributions – Male vs Female. Note: This graph shows smoothed histograms of the PF levels of German (dashed line) and American (solid line) study participants as measured by the PROMIS PF scale (theta). There is broad overlap in the distributions, though American individuals in general demonstrated lower levels of PF than German individuals.
+
+
+<br>
+
+#### Figure 2
+
+```{r fig.keep=2}
+plot_pf_sex <- plot.lordif(pf_dif_sex, 
+            labels = c("Male","Female"),
+            height = 12,
+            width = 5,
+            cex = 2,
+            lwd = 1)
+plot_pf_sex
+```
+
+<br>
+
+#### Figure 3
+
+```{r fig.keep=3}
+plot_pf_sex <- plot.lordif(pf_dif_sex, 
+            labels = c("Male","Female"),
+            height = 12,
+            width = 5,
+            cex = 2,
+            lwd = 1)
+plot_pf_sex
+```
+
+<br>
+
+#### Figure 4
+
+```{r fig.keep=4}
+plot_pf_sex <- plot.lordif(pf_dif_sex, 
+            labels = c("Male","Female"),
+            height = 12,
+            width = 5,
+            cex = 2,
+            lwd = 1)
+plot_pf_sex
+```
+
+Figure 4: Impact of DIF items on test characteristic curves.
+<br>
+
+#### Figure 5
+
+```{r echo = FALSE, fig.keep=5}
+plot_pf_sex <- plot.lordif(pf_dif_sex, 
+            labels = c("Male","Female"),
+            height = 12,
+            width = 5,
+            cex = 2,
+            lwd = 1)
+plot_pf_sex
+```
+
+Figure 5: Individual–level DIF impact. 
+
+<br>
+
+## UE
+
+<br>
+
+### Nagelkerke Pseudo R^2^ 
+
+```{r results = FALSE}
+ue_dif_sex <- lordif(as.data.frame(ue_items_all_countries), 
+                               sex_vector, 
+                               criterion = "R2",
+                               pseudo.R2 = "Nagelkerke",
+                               alpha = 0.05, 
+                               minCell = 5)
+```
+
+<br>
+
+### Identified DIF items
+
+```{r}
+ue_dif_sex_items <- ue_items_all_countries[ue_dif_sex$flag] %>% 
+  colnames()
+
+ue_identified_dif_sex_usa_items <- data_items_english %>% 
+  select(id, item) %>% 
+  filter(id %in% ue_dif_sex_items)
+
+ue_identified_dif_sex_ger_items <- data_items_german %>% 
+    select(id, item) %>% 
+  filter(id %in% ue_dif_sex_items)
+
+ue_dif_items_engl_ger_sex <- rbind(ue_identified_dif_sex_usa_items, 
+                           ue_identified_dif_sex_ger_items) %>% 
+  arrange(id) %>% 
+  select(id, item)
+
+ue_dif_items_engl_ger_sex
+```
+
+<br>
+
+### Differences between estimated thetas
+
+```{r}
+ue_dif_sex_parameters_overall <-  ue_dif_sex$calib[1]
+ue_dif_sex_parameters_group_specific <- ue_dif_sex$calib.sparse[1]
+
+ue_dif_sex_differences <- mapply('-', 
+                                 ue_dif_sex_parameters_overall, 
+                                 ue_dif_sex_parameters_group_specific, 
+                                 SIMPLIFY = FALSE) %>% 
+  unlist()
+
+ue_dif_sex_t_score_dif_free_difference_min <- min(ue_dif_sex_differences) * 10
+ue_dif_sex_t_score_dif_free_difference_max <- max(ue_dif_sex_differences) * 10
+ue_dif_sex_t_score_dif_free_difference_min
+ue_dif_sex_t_score_dif_free_difference_max
+```
+
+
+<br>
+
+### Plot
+
+#### Figure 1
+
+```{r fig.keep=1}
+plot_ue_sex <- plot.lordif(ue_dif_sex, 
+            labels = c("Male","Female"),
+            height = 12,
+            width = 5,
+            cex = 2,
+            lwd = 1)
+plot_ue_sex
+```
+
+Figure 1: Trait distributions – Male vs Female. Note: This graph shows smoothed histograms of the ue levels of German (dashed line) and American (solid line) study participants as measured by the PROMIS ue scale (theta). There is broad overlap in the distributions, though American individuals in general demonstrated lower levels of ue than German individuals.
+
+
+<br>
+
+#### Figure 2
+
+```{r fig.keep=2}
+plot_ue_sex <- plot.lordif(ue_dif_sex, 
+            labels = c("Male","Female"),
+            height = 12,
+            width = 5,
+            cex = 2,
+            lwd = 1)
+plot_ue_sex
+```
+
+<br>
+
+#### Figure 3
+
+```{r fig.keep=3}
+plot_ue_sex <- plot.lordif(ue_dif_sex, 
+            labels = c("Male","Female"),
+            height = 12,
+            width = 5,
+            cex = 2,
+            lwd = 1)
+plot_ue_sex
+```
+
+<br>
+
+#### Figure 4
+
+```{r fig.keep=4}
+plot_ue_sex <- plot.lordif(ue_dif_sex, 
+            labels = c("Male","Female"),
+            height = 12,
+            width = 5,
+            cex = 2,
+            lwd = 1)
+plot_ue_sex
+```
+
+<br>
+
+## PI
+
+<br>
+
+### Nagelkerke Pseudo R^2^ 
+
+```{r results = FALSE}
+pi_dif_sex <- lordif(as.data.frame(pi_items_all_countries), 
+                               sex_vector, 
+                               criterion = "R2",
+                               pseudo.R2 = "Nagelkerke",
+                               alpha = 0.05, 
+                               minCell = 5)
+```
+
+<br>
+
+## Saving DIF Summary Table
+
+```{r}
+pf_dif_results <- pf_dif_sex$stats %>% 
+  filter(pseudo12.Nagelkerke > 0.02 | pseudo13.Nagelkerke > 0.02  | pseudo23.Nagelkerke > 0.02 ) %>% 
+  mutate(comparison = "Male-Female",
+         promis_item = colnames(pf_items_all_countries[item])) %>% 
+  select(comparison, item, promis_item, 
+         uniform_pseudo12.Nagelkerke = pseudo12.Nagelkerke, 
+         overall_pseudo13.Nagelkerke = pseudo13.Nagelkerke, 
+         non_uniform_pseudo23.Nagelkerke = pseudo23.Nagelkerke) %>% 
+  mutate(type = case_when(uniform_pseudo12.Nagelkerke >  0.02 ~ "uniform", 
+                          non_uniform_pseudo23.Nagelkerke >  0.02 ~ "non-uniform", 
+                          TRUE ~ "overall"),
+         Dimension = "PF")
+
+ue_dif_results <- ue_dif_sex$stats %>% 
+  filter(pseudo12.Nagelkerke > 0.02 | pseudo13.Nagelkerke > 0.02  | pseudo23.Nagelkerke > 0.02 ) %>% 
+  mutate(comparison = "Male-Female",
+         promis_item = colnames(ue_items_all_countries[item])) %>% 
+  select(comparison, item, promis_item, 
+         uniform_pseudo12.Nagelkerke = pseudo12.Nagelkerke, 
+         overall_pseudo13.Nagelkerke = pseudo13.Nagelkerke, 
+         non_uniform_pseudo23.Nagelkerke = pseudo23.Nagelkerke) %>% 
+  mutate(type = case_when(uniform_pseudo12.Nagelkerke >  0.02 ~ "uniform", 
+                          non_uniform_pseudo23.Nagelkerke >  0.02 ~ "non-uniform", 
+                          TRUE ~ "overall"),
+         Dimension = "UE")
+
+```
+
+```{r}
+dif_sex_summary_table <- bind_rows(pf_dif_results, ue_dif_results) %>% 
+  select(Dimension, 
+         "PROMIS Item" = promis_item,
+         "Nagelkerke~12~" = uniform_pseudo12.Nagelkerke,
+         "Nagelkerke~13~" = overall_pseudo13.Nagelkerke,
+         "Nagelkerke~23~" = non_uniform_pseudo23.Nagelkerke,
+         Comparison = comparison,
+         "DIF Type" = type,
+         everything(), -item) %>% 
+    flextable() %>% 
+  theme_booktabs() %>% 
+  italic(italic = TRUE, part = "header") %>% 
+  autofit()  %>% 
+  add_header_lines(values = c("Summary of Flagged DIF Items", "Table S1")) %>% 
+    add_footer_lines(values = "Notes. ") %>% 
+  italic(italic = TRUE, part = "header")
+
+# Export to word
+doc_dif <- read_docx()
+doc_dif <- body_add_flextable(doc_dif, value = dif_sex_summary_table)
+print(doc_dif, target = "tables/table_dif_sex_summary.docx")
+```
+
+```{r}
+dif_summary_table <- bind_rows(pf_dif_type_table, ue_dif_usa_ger_results, pf_dif_results, ue_dif_results) %>% 
+      arrange(promis_item) %>% 
+  select(Dimension, 
+         "PROMIS Item" = promis_item,
+         Comparison = comparison,
+         "Nagelkerke~12~" = uniform_pseudo12.Nagelkerke,
+         "Nagelkerke~13~" = overall_pseudo13.Nagelkerke,
+         "Nagelkerke~23~" = non_uniform_pseudo23.Nagelkerke,
+         "DIF Type" = type,
+         everything(), -item) %>% 
+  flextable() %>% 
+  theme_booktabs() %>% 
+  italic(italic = TRUE, part = "header") %>% 
+  autofit()  %>% 
+  add_header_lines(values = c("Summary of Flagged DIF Items", "Table S1")) %>% 
+  add_footer_lines(values = "Notes. ") %>% 
+  italic(italic = TRUE, part = "header")
+
+# Export to word
+doc_dif <- read_docx()
+doc_dif <- body_add_flextable(doc_dif, value = dif_sex_summary_table)
+print(doc_dif, target = "tables/table_dif_sex_country_summary.docx")
+```
+
+```{r}
+dif_usa_ger_results
+pf_dif_results
+```
+
+
+```{r}
+dif_summary_table
+```
+
+
+
+```{r reproducibility_stuff, include=FALSE}
+devtools::session_info() %>%
+    yaml::write_yaml("code reproducibility/sessioninfo_3.yaml")
+```

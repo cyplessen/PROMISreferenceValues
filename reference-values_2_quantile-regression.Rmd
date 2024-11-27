@@ -1,0 +1,199 @@
+---
+title: "Patient-Specific Reference Data for PROMIS PF, UE, & PI"
+subtitle: "2. Quantile Regression"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+knit: (function(inputFile, encoding) {
+      rmarkdown::render(inputFile, 
+      encoding = encoding, 
+      output_dir = "html") })
+output:
+  html_document:
+    code_folding: show
+    highlight: pygment
+    keep_md: no
+    theme: cerulean
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+    numbersections: TRUE
+editor_options: 
+  chunk_output_type: inline
+---
+
+
+
+```{r setup, include=TRUE}
+knitr::opts_chunk$set(echo = TRUE)
+options(scipen = 999)
+library(plyr)
+library(tidyverse)
+library(haven)
+library(janitor)
+library(labelled)
+library(sjlabelled)
+library(sjPlot)
+library(summarytools)
+library(lordif)
+library(readxl)
+library(mirt)
+library(mirtCAT)
+library(mitools) # multiple imputation
+library(quantreg)
+library(mitml) # multiple imputation
+library(kableExtra)
+library(reshape)
+library(Amelia)
+library(qwraps2) # summary statistics
+library(kableExtra) # save html table
+library(nord)
+library(gghalves)
+library(plotly)
+library(viridis)
+library(svglite) # save svg
+library(flextable)
+```
+
+# About
+
+This document outlines all necessary steps for calculating the quantile regressions for the publication on patient-specific reference values of PROMIS Physical Functioning items in the USA, UK, and Germany.
+
+# Load Data
+
+```{r, warning=FALSE}
+sets_with_plausible_values <- readRDS("data/tidy/sets_with_plausible_values.rds")
+dataComplete <- readRDS("data/tidy/dataComplete.rds")
+```
+
+<br>
+
+# Quantile Regressions
+
+## Functions
+
+### write_formula()
+
+These are the models ranging from least to most complex.
+
+```{r}
+write_formula <- function(domain) {
+  formula_0 <<- paste0(domain, " ~ 1")
+  formula_1 <<- paste0(domain, " ~ age")
+  formula_2 <<- paste0(domain, " ~ age + sex")
+  formula_3 <<- paste0(domain, " ~ age + country")
+  formula_4 <<- paste0(domain, " ~ age + sex + country")
+  formula_5 <<- paste0(domain, " ~ age + I(age_50^2) + country + sex -1")
+  formula_6 <<- paste0(domain, " ~ age + sex + country + country:sex + country:age")
+  formula_7 <<- paste0(domain, " ~ age * sex * country")
+}
+```
+
+<br>
+
+### fit_model()
+
+Function to calculate all 25 models and save tau, parameter name, value
+```{r}
+fit_model <- function(data, formula) {
+  fit <- rq(data = data, 
+            formula, 
+            tau = c(.01, .05, .1, .2, .3, .4, .5, .6, .7, .8, .9, .95, .99 ))
+  
+  ldply(summary(fit, se = "nid"), function(x) data.frame(tau = x$tau, 
+                                                         par = rownames(x$coef),
+                                                         est = x$coef[, 1],
+                                                         se = x$coef[, 2]))
+  
+}
+```
+
+<br>
+
+### get_pooled()
+```{r}
+get_pooled <- function(x) {
+  x <- mi.meld(q = as.matrix(x$est), 
+               se = as.matrix(x$se))
+  
+  return(data.frame(est = x[[1]], 
+                    se = x[[2]]))
+}
+```
+
+<br>
+
+### get_model_fit()
+```{r}
+get_model_fit <- function(data, formula) {
+  
+  fit <- rq(data = data, 
+            formula, 
+            tau = c(.01, .05, .1, .2, .3, .4, .5, .6, .7, .8, .9, .95, .99 ))
+  
+  nobs <- nrow(residuals(fit))
+  
+  ldply(fit, function(x) data.frame(tau = c(.01, .05, .1, .2, .3, .4, .5, .6, .7, .8, .9, .95, .99), 
+                                    AIC = AIC(fit)[1:13],
+                                    BIC = AIC(fit, k = log(nobs))[1:13]))
+  
+}
+```
+
+<br>
+
+# Create all models for all domains and save AIC/BIC 
+
+We use `age_50` for all our analyses. This is standardized for age - 50, as we use this for the baseline.
+```{r}
+domains <- c("pf_pv", "ue_pv", "pi_pv")
+
+formulas <- c(paste0("formula_", 0:7))
+
+models_age_50 <- list()
+
+for (k in domains) {
+  
+  formula_0 <<- paste0(k, " ~ 1")
+  formula_1 <<- paste0(k, " ~ age_50")
+  formula_2 <<- paste0(k, " ~ age_50 + sex")
+  formula_3 <<- paste0(k, " ~ age_50 + country")
+  formula_4 <<- paste0(k, " ~ age_50 + sex + country - 1")
+  formula_5 <<- paste0(k, " ~ age_50 + I(age_50^2) + country + sex -1")
+  formula_6 <<- paste0(k, " ~ age_50 + sex + country + country:sex + country:age_50")
+  formula_7 <<- paste0(k, " ~ age_50 * sex * country")
+  
+  for (i in formulas) {
+    
+    # calculate 25 quantile regression
+    model <- ldply(sets_with_plausible_values, 
+                   function(dat) fit_model(data = dat,
+                                           formula = eval(parse(text = i))))
+    # save model in list object
+    models_age_50[[k]]$model[[i]] <- model
+    
+    # save AIC and BIC
+    models_age_50[[k]]$AIC[[i]] <- ldply(sets_with_plausible_values, 
+                                  function(dat) get_model_fit(data = dat,
+                                                              formula = eval(parse(text = i)))) %>% 
+      filter(.id == "coefficients") %>% 
+      mutate(id = rep(1:25, each = 13)) %>% 
+      select(id, tau, AIC, BIC)
+    
+    # save pooled model
+    models_age_50[[k]]$pooled[[i]] <- model %>% 
+      group_by(tau, par) %>% 
+      do((get_pooled(.)))
+  }
+}
+```
+
+<br>
+
+# Save all models
+```{r}
+write_rds(models_age_50, "data/tidy/models_age_50.rds")
+```
+
+```{r reproducibility_stuff, include=FALSE}
+devtools::session_info() %>%
+    yaml::write_yaml("code reproducibility/sessioninfo_2.yaml")
+```
